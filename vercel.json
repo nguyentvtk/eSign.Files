@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "buildCommand": null,
+  "outputDirectory": "public",
+  "builds": [
+    { "src": "server/index.js", "use": "@vercel/node" },
+    { "src": "public/**", "use": "@vercel/static" }
+  ],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/server/index.js" },
+    { "source": "/uploads/(.*)", "destination": "/server/index.js" },
+    { "source": "/((?!.*\\.).*)", "destination": "/public/index.html" }
+  ],
+  "env": {
+    "JWT_SECRET": "@jwt_secret",
+    "JWT_REFRESH_SECRET": "@jwt_refresh_secret",
+    "TURSO_DATABASE_URL": "@turso_database_url",
+    "TURSO_AUTH_TOKEN": "@turso_auth_token",
+    "TELEGRAM_BOT_TOKEN": "@telegram_bot_token",
+    "TELEGRAM_CHAT_ID": "@telegram_chat_id",
+    "TELEGRAM_TOPIC_ID": "@telegram_topic_id",
+    "DROPBOX_ACCESS_TOKEN": "@dropbox_access_token",
+    "DROPBOX_FOLDER": "@dropbox_folder"
+  }
+}

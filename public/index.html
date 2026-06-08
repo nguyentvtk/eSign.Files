@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ Thống Ký Tài Liệu Điện Tử — eSign</title>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     LOGIN SCREEN
+═══════════════════════════════════════════════════════════ -->
+<div id="app-login">
+  <div class="login-hero">
+    <div class="hero-dots"></div>
+    <div class="hero-logo">
+      <div class="hero-logo-icon"><i class="bi bi-shield-lock"></i></div>
+      <div>
+        <div class="hero-logo-text">eSign</div>
+        <div class="hero-logo-sub">DIGITAL SIGNATURE PLATFORM</div>
+      </div>
+    </div>
+    <h1 class="hero-headline">Ký số tài liệu <span>an toàn</span> & tuân thủ pháp lý</h1>
+    <p class="hero-desc">Hệ thống ký tài liệu điện tử tuân thủ Thông tư 22/2020/TT-BTTTT và Luật Giao dịch điện tử 2023.</p>
+    <div class="hero-features">
+      <div class="hero-feat"><div class="hero-feat-icon"><i class="bi bi-fingerprint"></i></div><span class="hero-feat-text">Xác thực 2 lớp (OTP) khi ký</span></div>
+      <div class="hero-feat"><div class="hero-feat-icon"><i class="bi bi-usb-drive"></i></div><span class="hero-feat-text">Hỗ trợ USB Token & Remote Signing</span></div>
+      <div class="hero-feat"><div class="hero-feat-icon"><i class="bi bi-journal-check"></i></div><span class="hero-feat-text">Nhật ký giao dịch chống chối bỏ</span></div>
+      <div class="hero-feat"><div class="hero-feat-icon"><i class="bi bi-patch-check"></i></div><span class="hero-feat-text">Xác minh tính toàn vẹn tài liệu</span></div>
+    </div>
+  </div>
+  <div class="login-panel">
+    <div class="login-card">
+      <div class="login-card-header">
+        <div class="login-card-icon"><i class="bi bi-box-arrow-in-right"></i></div>
+        <h2 class="login-card-title">Đăng nhập</h2>
+        <p class="login-card-subtitle">Sử dụng tài khoản được cấp để truy cập</p>
+      </div>
+      <div id="login-alert" class="alert-login"></div>
+      <form id="login-form" autocomplete="on">
+        <div class="form-field">
+          <label class="form-label-custom">Mã NV / Email / Số điện thoại / Họ tên</label>
+          <div class="input-wrapper">
+            <i class="bi bi-person input-icon"></i>
+            <input type="text" id="login-identifier" class="input-custom" placeholder="Nhập Mã NV, Email, SĐT hoặc Họ tên" autocomplete="username" required>
+          </div>
+          <div class="field-error" id="email-error"><i class="bi bi-exclamation-circle"></i> <span></span></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label-custom">Mật khẩu</label>
+          <div class="input-wrapper">
+            <i class="bi bi-lock input-icon"></i>
+            <input type="password" id="login-password" class="input-custom" placeholder="Nhập mật khẩu" autocomplete="current-password" required>
+            <button type="button" class="input-toggle" id="toggle-pw"><i class="bi bi-eye"></i></button>
+          </div>
+          <div class="field-error" id="pw-error"><i class="bi bi-exclamation-circle"></i> <span></span></div>
+        </div>
+        <div class="login-options">
+          <label class="check-label"><input type="checkbox" id="remember-me"> Ghi nhớ đăng nhập</label>
+        </div>
+        <button type="submit" class="btn-login" id="btn-login">
+          <div class="btn-spinner"></div>
+          <span class="btn-label">Đăng nhập</span>
+        </button>
+      </form>
+      <div class="login-footer">eSign v3.0 — Tuân thủ TT22/2020 & Luật GDĐT 2023</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DASHBOARD SCREEN
+═══════════════════════════════════════════════════════════ -->
+<div id="app-dashboard">
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <a href="#" class="sidebar-brand">
+      <div class="brand-icon"><i class="bi bi-shield-lock"></i></div>
+      <div><span class="brand-name">eSign</span><span class="brand-sub">Digital Signature</span></div>
+    </a>
+    <div class="sidebar-nav">
+      <div class="nav-group-label">CHÍNH</div>
+      <a href="#" class="nav-link active" data-page="dashboard" data-feature="Bảng điều khiển">
+        <i class="bi bi-grid-1x2 nav-icon"></i><span class="nav-label">Bảng điều khiển</span>
+      </a>
+      <a href="#" class="nav-link" data-page="new-doc" data-feature="Khởi tạo tài liệu">
+        <i class="bi bi-file-earmark-plus nav-icon"></i><span class="nav-label">Khởi tạo tài liệu</span>
+      </a>
+      <a href="#" class="nav-link" data-page="pending" data-feature="Tài liệu chờ ký">
+        <i class="bi bi-pen nav-icon"></i><span class="nav-label">Tài liệu chờ ký</span><span class="nav-badge warning" id="pending-count">0</span>
+      </a>
+      <a href="#" class="nav-link" data-page="all-docs" data-feature="Tra cứu tài liệu">
+        <i class="bi bi-folder2-open nav-icon"></i><span class="nav-label">Tài liệu của tôi</span>
+      </a>
+      <a href="#" class="nav-link" data-page="verify" data-feature="Xác minh tài liệu">
+        <i class="bi bi-patch-check nav-icon"></i><span class="nav-label">Xác minh tài liệu</span>
+      </a>
+
+      <div class="nav-group-label">SỔ CÔNG VĂN</div>
+      <a href="#" class="nav-link" data-page="projects" data-feature="Quản lý dự án">
+        <i class="bi bi-folder-symlink nav-icon"></i><span class="nav-label">Quản lý dự án</span>
+      </a>
+      <a href="#" class="nav-link" data-page="register" data-feature="Sổ công văn đi">
+        <i class="bi bi-journal-bookmark nav-icon"></i><span class="nav-label">Sổ công văn đi</span>
+      </a>
+
+      <div class="nav-group-label">QUẢN TRỊ</div>
+      <a href="#" class="nav-link" data-page="users" data-feature="Quản lý người dùng">
+        <i class="bi bi-people nav-icon"></i><span class="nav-label">Quản lý người dùng</span>
+      </a>
+      <a href="#" class="nav-link" data-page="audit" data-feature="Nhật ký giao dịch">
+        <i class="bi bi-journal-text nav-icon"></i><span class="nav-label">Nhật ký giao dịch</span>
+      </a>
+
+      <div class="nav-group-label">CÁ NHÂN</div>
+      <a href="#" class="nav-link" data-page="settings">
+        <i class="bi bi-gear nav-icon"></i><span class="nav-label">Cài đặt bảo mật</span>
+      </a>
+    </div>
+    <div class="sidebar-footer">
+      <div class="sb-avatar" id="sb-avatar">A</div>
+      <div class="sb-user-info">
+        <span class="sb-user-name" id="sb-name">Admin</span>
+        <span class="sb-user-role" id="sb-role">Admin</span>
+      </div>
+    </div>
+  </nav>
+
+  <div id="sidebar-overlay"></div>
+
+  <!-- Header -->
+  <header id="main-header">
+    <button class="header-toggle" id="btn-toggle-sidebar"><i class="bi bi-list"></i></button>
+    <nav class="breadcrumb mb-0">
+      <span class="breadcrumb-item active" id="breadcrumb-page">Bảng điều khiển</span>
+    </nav>
+    <div class="header-actions">
+      <div class="dropdown">
+        <button class="user-dropdown-toggle" data-bs-toggle="dropdown">
+          <div class="hdr-avatar" id="hdr-avatar">A</div>
+          <div class="user-info-hdr">
+            <span class="user-name-lbl" id="hdr-name">Admin</span>
+            <span class="user-role-lbl" id="hdr-role">Admin</span>
+          </div>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#" data-page="settings"><i class="bi bi-gear"></i> Cài đặt bảo mật</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="#" id="btn-logout"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a></li>
+        </ul>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main id="main-content">
+
+    <!-- Dashboard Page -->
+    <div id="page-dashboard" class="active">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div><h1 class="page-title">Bảng điều khiển</h1><p class="page-desc">Tổng quan hệ thống ký tài liệu điện tử</p></div>
+      </div>
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon blue"><i class="bi bi-file-earmark-text"></i></div><div><div class="stat-label">Tổng tài liệu</div><div class="stat-value" id="stat-total">0</div></div></div></div>
+        <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon amber"><i class="bi bi-clock-history"></i></div><div><div class="stat-label">Chờ ký</div><div class="stat-value" id="stat-pending">0</div></div></div></div>
+        <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon green"><i class="bi bi-check-circle"></i></div><div><div class="stat-label">Đã ký</div><div class="stat-value" id="stat-signed">0</div></div></div></div>
+        <div class="col-sm-6 col-xl-3"><div class="stat-card"><div class="stat-icon red"><i class="bi bi-x-circle"></i></div><div><div class="stat-label">Từ chối</div><div class="stat-value" id="stat-rejected">0</div></div></div></div>
+      </div>
+      <div class="row g-3">
+        <div class="col-lg-8">
+          <div class="data-card">
+            <div class="data-card-header"><h3 class="data-card-title">Tài liệu gần đây</h3></div>
+            <div style="overflow-x:auto">
+              <table class="doc-table"><thead><tr><th>Tài liệu</th><th>Loại</th><th>Trạng thái</th><th>Ngày tạo</th><th>Thao tác</th></tr></thead>
+              <tbody id="recent-docs-body"><tr><td colspan="5" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="data-card mb-3">
+            <div class="data-card-header"><h3 class="data-card-title">Thao tác nhanh</h3></div>
+            <div class="quick-action-item" data-page="new-doc"><div class="qa-icon" style="background:#EBF5FF;color:#1A56DB"><i class="bi bi-file-earmark-plus"></i></div><div class="qa-body"><div class="qa-title">Tạo tài liệu mới</div><div class="qa-desc">Khởi tạo tài liệu trình ký</div></div></div>
+            <div class="quick-action-item" data-page="pending"><div class="qa-icon" style="background:#FFFBEB;color:#D97706"><i class="bi bi-pen"></i></div><div class="qa-body"><div class="qa-title">Tài liệu chờ ký</div><div class="qa-desc">Xem và xử lý tài liệu</div></div></div>
+            <div class="quick-action-item" data-page="verify"><div class="qa-icon" style="background:#ECFDF5;color:#059669"><i class="bi bi-patch-check"></i></div><div class="qa-body"><div class="qa-title">Xác minh tài liệu</div><div class="qa-desc">Kiểm tra tính toàn vẹn</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users Page -->
+    <div id="page-users">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div><h1 class="page-title">Quản lý người dùng</h1><p class="page-desc">Thêm, sửa, xoá tài khoản người dùng</p></div>
+        <button class="btn-primary-custom" id="btn-add-user"><i class="bi bi-person-plus"></i> Thêm mới</button>
+      </div>
+      <div class="data-card">
+        <div class="usr-toolbar">
+          <div class="search-bar"><i class="bi bi-search search-icon"></i><input type="text" id="user-search" placeholder="Tìm kiếm..."></div>
+        </div>
+        <div id="usr-table-wrap">
+          <table class="doc-table"><thead><tr><th>Người dùng</th><th>Email</th><th>Phòng ban</th><th>Chức vụ</th><th>Vai trò</th><th>OTP</th><th>Thao tác</th></tr></thead>
+          <tbody id="users-body"><tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- New Document Page -->
+    <div id="page-new-doc">
+      <div class="mb-4"><h1 class="page-title">Khởi tạo tài liệu trình ký</h1><p class="page-desc">Tải lên PDF và cấu hình luồng ký</p></div>
+      <form id="new-doc-form" enctype="multipart/form-data">
+        <div class="doc-wizard-grid">
+          <div>
+            <div class="nd-card mb-3">
+              <div class="nd-card-header"><div class="nd-card-icon" style="background:#EEF2FF;color:#7C3AED"><i class="bi bi-folder-symlink"></i></div><div><div class="nd-card-title">Sổ công văn đi</div><div class="nd-card-desc">Phân loại theo dự án & giai đoạn (phục vụ quyết toán)</div></div></div>
+              <div class="nd-card-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="nd-label">Dự án <span class="req">*</span></label>
+                    <select class="nd-input" id="nd-project"><option value="">— Chọn dự án —</option></select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="nd-label">Giai đoạn thực hiện</label>
+                    <select class="nd-input" id="nd-phase" disabled><option value="">— Chọn giai đoạn —</option></select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="nd-label">Loại văn bản <span class="req">*</span></label>
+                    <select class="nd-input" id="nd-loai-vb">
+                      <option value="">— Chọn loại —</option>
+                      <option>Quyết định</option>
+                      <option>Tờ trình</option>
+                      <option>Công văn</option>
+                      <option>Báo cáo</option>
+                      <option>Kế hoạch</option>
+                      <option>Hợp đồng</option>
+                      <option>Phụ lục Hợp đồng</option>
+                      <option>Biên bản</option>
+                      <option>Thông báo</option>
+                      <option>Nghị quyết</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="nd-label">Số văn bản</label>
+                    <div style="display:flex;gap:8px">
+                      <div style="display:flex;gap:6px;background:var(--surface-bg);border:1px solid var(--card-border);border-radius:8px;padding:3px">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;padding:5px 10px;border-radius:5px;cursor:pointer" id="lbl-mode-auto"><input type="radio" name="vb-mode" value="auto" checked> Tự động</label>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12.5px;padding:5px 10px;border-radius:5px;cursor:pointer" id="lbl-mode-manual"><input type="radio" name="vb-mode" value="manual"> Thủ công</label>
+                      </div>
+                      <input type="text" class="nd-input" id="nd-so-vb" placeholder="Tự sinh sau khi chọn loại" readonly style="flex:1">
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <label class="nd-label">Người duyệt (lãnh đạo ký) <span class="req">*</span></label>
+                    <select class="nd-input" id="nd-approver"><option value="">— Chọn người duyệt —</option></select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="nd-card mb-3">
+              <div class="nd-card-header"><div class="nd-card-icon" style="background:#EBF5FF;color:#1A56DB"><i class="bi bi-file-earmark-text"></i></div><div><div class="nd-card-title">Thông tin tài liệu</div></div></div>
+              <div class="nd-card-body">
+                <div class="nd-form-group">
+                  <label class="nd-label">Tên tài liệu <span class="req">*</span> <span class="nd-hint">Mặc định lấy theo tên file</span></label>
+                  <input type="text" class="nd-input" id="nd-name" name="ten_tai_lieu" placeholder="Sẽ tự lấy theo tên file PDF" required>
+                </div>
+                <div class="nd-form-group">
+                  <label class="nd-label">Loại tài liệu (kỹ thuật)</label>
+                  <select class="nd-input" id="nd-type" name="loai_tai_lieu">
+                    <option value="van-ban-hc">Văn bản hành chính</option>
+                    <option value="hop-dong">Hợp đồng</option>
+                    <option value="bien-ban">Biên bản</option>
+                    <option value="to-trinh">Tờ trình</option>
+                    <option value="cong-van">Công văn</option>
+                  </select>
+                </div>
+                <div class="nd-form-group">
+                  <label class="nd-label">Trích yếu</label>
+                  <textarea class="nd-input" id="nd-summary" name="trich_yeu" rows="3" placeholder="Mô tả ngắn gọn nội dung..."></textarea>
+                </div>
+              </div>
+            </div>
+            <div class="nd-card mb-3">
+              <div class="nd-card-header"><div class="nd-card-icon" style="background:#FEF2F2;color:#DC2626"><i class="bi bi-file-earmark-pdf"></i></div><div><div class="nd-card-title">Tải lên file PDF</div></div></div>
+              <div class="nd-card-body">
+                <div class="drop-zone" id="drop-zone">
+                  <input type="file" name="file" accept=".pdf,application/pdf" id="nd-file" required>
+                  <div class="dz-icon-wrap"><i class="bi bi-cloud-arrow-up"></i></div>
+                  <div class="dz-title">Kéo thả file PDF vào đây</div>
+                  <div class="dz-sub">hoặc <span class="dz-browse">chọn từ máy tính</span></div>
+                  <div class="dz-constraints"><span class="dz-tag">PDF</span><span class="dz-tag">Tối đa 25MB</span></div>
+                  <div class="file-preview">
+                    <div class="file-preview-icon"><i class="bi bi-file-earmark-pdf"></i></div>
+                    <div class="file-preview-body"><div class="file-preview-name" id="fp-name"></div><div class="file-preview-meta" id="fp-meta"></div></div>
+                    <button type="button" class="file-preview-remove" id="fp-remove"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="nd-card mb-3">
+              <div class="nd-card-header"><div class="nd-card-icon" style="background:#EEF2FF;color:#7C3AED"><i class="bi bi-paperclip"></i></div><div><div class="nd-card-title">File đính kèm</div><div class="nd-card-desc">Tối đa 5 file (PDF hoặc DOCX)</div></div></div>
+              <div class="nd-card-body">
+                <input type="file" id="nd-attachments" name="attachments" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none">
+                <div id="attach-list" style="margin-bottom:12px"></div>
+                <button type="button" class="btn-add-signer" id="btn-add-attach"><i class="bi bi-plus-circle"></i> Thêm file đính kèm</button>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:8px"><i class="bi bi-info-circle"></i> Chấp nhận file .PDF và .DOCX, tối đa 5 file</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="nd-summary-card">
+              <div class="nd-summary-header"><i class="bi bi-clipboard-check"></i> Tóm tắt</div>
+              <div class="nd-summary-body">
+                <div class="nd-sum-row"><div class="nd-sum-key">Tên TL</div><div class="nd-sum-val" id="sum-name">—</div></div>
+                <div class="nd-sum-row"><div class="nd-sum-key">Loại</div><div class="nd-sum-val" id="sum-type">Văn bản HC</div></div>
+                <div class="nd-sum-row"><div class="nd-sum-key">File</div><div class="nd-sum-val" id="sum-file">Chưa tải</div></div>
+                <div class="nd-sum-row"><div class="nd-sum-key">SHA-256</div><div class="nd-sum-val" id="sum-hash" style="font-family:monospace;font-size:11px;word-break:break-all">—</div></div>
+                <div class="nd-sum-row"><div class="nd-sum-key">Đính kèm</div><div class="nd-sum-val" id="sum-attach">0 file</div></div>
+                <button type="submit" class="nd-submit-btn" id="btn-submit-doc">
+                  <div class="btn-spinner"></div>
+                  <span class="btn-txt"><i class="bi bi-send"></i> Gửi trình ký</span>
+                </button>
+                <button type="button" class="nd-reset-btn" id="btn-reset-doc"><i class="bi bi-arrow-counterclockwise"></i> Nhập lại</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Pending Documents Page -->
+    <div id="page-pending">
+      <div class="mb-4"><h1 class="page-title">Tài liệu chờ ký</h1><p class="page-desc">Danh sách tài liệu cần bạn xử lý</p></div>
+      <div id="pending-list"></div>
+    </div>
+
+    <!-- All Documents (Search) Page -->
+    <div id="page-all-docs">
+      <div class="mb-4"><h1 class="page-title">Tra cứu tài liệu</h1><p class="page-desc">Tìm kiếm và xem tất cả tài liệu</p></div>
+      <div class="data-card">
+        <div class="ds-filter-bar">
+          <div class="search-bar"><i class="bi bi-search search-icon"></i><input type="text" id="doc-search" placeholder="Tìm kiếm tài liệu..."></div>
+          <select class="ds-select" id="doc-status-filter">
+            <option value="">Tất cả trạng thái</option>
+            <option value="Chờ ký">Chờ ký</option>
+            <option value="Đang ký">Đang ký</option>
+            <option value="Đã ký">Đã ký</option>
+            <option value="Từ chối">Từ chối</option>
+          </select>
+        </div>
+        <div id="ds-table-wrap">
+          <table class="ds-table"><thead><tr><th>Tài liệu</th><th>Loại</th><th>Người tạo</th><th>Trạng thái</th><th>Ngày tạo</th><th>Thao tác</th></tr></thead>
+          <tbody id="all-docs-body"><tr><td colspan="6" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Verify Document Page -->
+    <div id="page-verify">
+      <div class="mb-4"><h1 class="page-title">Xác minh tài liệu</h1><p class="page-desc">Kiểm tra tính toàn vẹn và chữ ký số của tài liệu</p></div>
+      <div class="data-card" style="max-width:700px">
+        <div class="nd-card-body">
+          <div class="nd-form-group">
+            <label class="nd-label">Nhập mã tài liệu hoặc chọn từ danh sách</label>
+            <div class="d-flex gap-2">
+              <input type="text" class="nd-input" id="verify-doc-id" placeholder="VD: VB-2026-1234">
+              <button type="button" class="btn-primary-custom" id="btn-verify"><i class="bi bi-shield-check"></i> Xác minh</button>
+            </div>
+          </div>
+          <div id="verify-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Projects Page -->
+    <div id="page-projects">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div><h1 class="page-title">Quản lý dự án</h1><p class="page-desc">Tạo dự án để phân loại tài liệu theo sổ công văn đi & quyết toán</p></div>
+        <button class="btn-primary-custom" id="btn-add-project"><i class="bi bi-plus-circle"></i> Thêm dự án</button>
+      </div>
+      <div class="data-card">
+        <div style="overflow-x:auto">
+          <table class="doc-table"><thead><tr><th>Mã DA</th><th>Tên dự án</th><th>Chủ đầu tư</th><th>Tổng MĐT</th><th>VB / Đã ký</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+          <tbody id="projects-body"><tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Register (Sổ công văn đi) -->
+    <div id="page-register">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div><h1 class="page-title">Sổ công văn đi</h1><p class="page-desc">Tổng hợp văn bản theo dự án, phục vụ xuất danh mục HS quyết toán</p></div>
+        <div style="display:flex;gap:8px">
+          <select class="nd-input" id="reg-project-filter" style="width:300px"><option value="">— Chọn dự án —</option></select>
+          <button class="btn-primary-custom" id="btn-export-register"><i class="bi bi-file-earmark-spreadsheet"></i> Xuất danh mục HS</button>
+        </div>
+      </div>
+      <div class="data-card">
+        <div style="overflow-x:auto">
+          <table class="doc-table"><thead><tr><th>STT</th><th>Giai đoạn</th><th>Loại VB</th><th>Số VB</th><th>Tên tài liệu</th><th>Người duyệt</th><th>Ngày ký</th><th>Trạng thái</th></tr></thead>
+          <tbody id="register-body"><tr><td colspan="8" class="text-center text-muted py-4">Chọn dự án để xem danh mục</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Project Modal -->
+    <div class="modal fade" id="projectModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Thêm dự án</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <form id="project-form">
+          <div class="row g-3">
+            <div class="col-md-4"><label class="form-label">Mã dự án *</label><input class="form-control" id="pf-ma" required></div>
+            <div class="col-md-8"><label class="form-label">Tên dự án *</label><input class="form-control" id="pf-ten" required></div>
+            <div class="col-md-8"><label class="form-label">Chủ đầu tư</label><input class="form-control" id="pf-cdt"></div>
+            <div class="col-md-4"><label class="form-label">Tổng mức đầu tư (VND)</label><input type="number" class="form-control" id="pf-tmdt"></div>
+            <div class="col-md-6"><label class="form-label">Ngày bắt đầu</label><input type="date" class="form-control" id="pf-start"></div>
+            <div class="col-md-6"><label class="form-label">Ngày kết thúc dự kiến</label><input type="date" class="form-control" id="pf-end"></div>
+            <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" id="pf-desc" rows="2"></textarea></div>
+          </div>
+          <div style="margin-top:10px;padding:10px;background:var(--surface-bg);border-radius:8px;font-size:12px;color:var(--text-secondary)">
+            <i class="bi bi-info-circle"></i> Hệ thống sẽ tự tạo các giai đoạn mặc định: Chuẩn bị đầu tư, Thực hiện đầu tư, Đấu thầu, Thi công, Nghiệm thu, Quyết toán.
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+        <button class="btn btn-primary" id="btn-save-project">Lưu</button>
+      </div>
+    </div></div></div>
+
+    <!-- Audit Log Page -->
+    <div id="page-audit">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div><h1 class="page-title">Nhật ký giao dịch</h1><p class="page-desc">Lịch sử toàn bộ thao tác — chống chối bỏ theo Luật GDĐT 2023</p></div>
+        <a class="btn-outline-custom" id="btn-export-audit"><i class="bi bi-download"></i> Xuất CSV</a>
+      </div>
+      <div class="data-card">
+        <div class="audit-filters">
+          <select class="ds-select" id="audit-action-filter"><option value="">Tất cả hành động</option></select>
+          <input type="date" class="ds-date-input" id="audit-from">
+          <input type="date" class="ds-date-input" id="audit-to">
+          <button class="btn-outline-custom" id="btn-audit-filter"><i class="bi bi-funnel"></i> Lọc</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="audit-table"><thead><tr><th>#</th><th>Thời gian</th><th>Người dùng</th><th>Hành động</th><th>Đối tượng</th><th>IP</th><th>Chi tiết</th></tr></thead>
+          <tbody id="audit-body"><tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Page -->
+    <div id="page-settings">
+      <div class="mb-4"><h1 class="page-title">Cài đặt bảo mật</h1><p class="page-desc">Thiết lập xác thực 2 lớp và quản lý lưu trữ</p></div>
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="data-card">
+            <div class="data-card-header"><h3 class="data-card-title"><i class="bi bi-shield-lock"></i> Xác thực 2 lớp (TOTP)</h3></div>
+            <div class="nd-card-body">
+              <div class="otp-status" id="otp-status"></div>
+              <div id="otp-setup-area"></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="data-card">
+            <div class="data-card-header"><h3 class="data-card-title"><i class="bi bi-cloud-arrow-up"></i> Lưu trữ Dropbox</h3></div>
+            <div class="nd-card-body" id="dropbox-status-area">
+              <div class="text-muted">Đang kiểm tra...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- User Modal -->
+<div class="modal fade" id="userModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title" id="userModalTitle">Thêm người dùng</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <form id="user-form">
+      <input type="hidden" id="uf-id">
+      <div class="row g-3">
+        <div class="col-6"><label class="form-label">Mã NV *</label><input type="text" class="form-control" id="uf-manv" required></div>
+        <div class="col-6"><label class="form-label">Họ tên *</label><input type="text" class="form-control" id="uf-name" required></div>
+        <div class="col-12"><label class="form-label">Email *</label><input type="email" class="form-control" id="uf-email" required></div>
+        <div class="col-6"><label class="form-label">Số điện thoại</label><input type="text" class="form-control" id="uf-phone"></div>
+        <div class="col-6"><label class="form-label">Chức vụ</label><input type="text" class="form-control" id="uf-chucvu"></div>
+        <div class="col-6"><label class="form-label">Phòng ban</label><input type="text" class="form-control" id="uf-phongban"></div>
+        <div class="col-6"><label class="form-label">Vai trò</label><select class="form-select" id="uf-role"><option>Người dùng</option><option>Quản lý</option><option>Admin</option></select></div>
+        <div class="col-12"><label class="form-label">Mật khẩu</label><input type="password" class="form-control" id="uf-password" placeholder="Để trống nếu không đổi"></div>
+      </div>
+    </form>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+    <button class="btn btn-primary" id="btn-save-user">Lưu</button>
+  </div>
+</div></div></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SIGN WORKFLOW — Full-screen modal cho lãnh đạo
+═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="signWorkflowModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-fullscreen">
+    <div class="modal-content" style="background:#F3F4F6">
+      <div class="modal-header" style="background:#fff;border-bottom:1px solid var(--card-border)">
+        <div style="display:flex;align-items:center;gap:14px;flex:1">
+          <i class="bi bi-pen" style="font-size:22px;color:var(--brand-primary)"></i>
+          <div>
+            <div style="font-size:16px;font-weight:700" id="sw-title">Phê duyệt & Ký số</div>
+            <div style="font-size:12px;color:var(--text-muted)" id="sw-subtitle">—</div>
+          </div>
+        </div>
+        <div id="sw-steps" style="display:flex;gap:6px;margin-right:14px">
+          <span class="sw-step active" data-step="1">1. Xem</span>
+          <span class="sw-step" data-step="2">2. Sửa (tuỳ chọn)</span>
+          <span class="sw-step" data-step="3">3. Đặt chữ ký</span>
+          <span class="sw-step" data-step="4">4. Ký</span>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+
+        <!-- Toolbar -->
+        <div id="sw-toolbar" style="background:#fff;border-bottom:1px solid var(--card-border);padding:10px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn-outline-custom" id="sw-prev-page"><i class="bi bi-chevron-left"></i></button>
+          <span style="font-size:13px">Trang <input type="number" id="sw-page-input" value="1" min="1" style="width:50px;text-align:center;border:1px solid var(--card-border);border-radius:6px;padding:3px 6px"> / <span id="sw-total-pages">1</span></span>
+          <button class="btn-outline-custom" id="sw-next-page"><i class="bi bi-chevron-right"></i></button>
+          <button class="btn-outline-custom" id="sw-zoom-out"><i class="bi bi-zoom-out"></i></button>
+          <span id="sw-zoom-label" style="font-size:13px;min-width:50px;text-align:center">100%</span>
+          <button class="btn-outline-custom" id="sw-zoom-in"><i class="bi bi-zoom-in"></i></button>
+
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn-outline-custom" id="sw-tab-attach"><i class="bi bi-paperclip"></i> File đính kèm <span id="sw-attach-count">0</span></button>
+            <button class="btn-outline-custom" id="sw-replace-pdf"><i class="bi bi-upload"></i> Tải PDF thay thế</button>
+            <input type="file" id="sw-replace-input" accept=".pdf" style="display:none">
+            <button class="btn-primary-custom" id="sw-enter-sign-mode"><i class="bi bi-pen"></i> Chuyển sang chế độ ký</button>
+            <button class="btn-doc-action reject" id="sw-reject" style="min-height:auto"><i class="bi bi-x-circle"></i> Từ chối</button>
+          </div>
+        </div>
+
+        <!-- Viewport -->
+        <div id="sw-viewport" style="flex:1;overflow:auto;display:flex;justify-content:center;padding:20px;background:#525659;position:relative">
+          <div id="sw-canvas-wrapper" style="position:relative;display:inline-block;background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.4);cursor:default;line-height:0">
+            <canvas id="sw-canvas"></canvas>
+            <div id="sw-sig-layer" style="position:absolute;inset:0;pointer-events:none"></div>
+          </div>
+
+          <!-- Loading overlay -->
+          <div id="sw-loading" style="position:absolute;inset:0;background:rgba(82,86,89,.85);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#fff">
+            <div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite"></div>
+            <div id="sw-loading-text" style="font-size:13px">Đang tải PDF…</div>
+          </div>
+        </div>
+
+        <!-- Attachments panel (hidden by default) -->
+        <div id="sw-attach-panel" style="display:none;background:#fff;border-top:1px solid var(--card-border);padding:14px 18px;max-height:200px;overflow-y:auto">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px">File đính kèm</div>
+          <div id="sw-attach-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+
+        <!-- Sign mode banner -->
+        <div id="sw-sig-banner" style="display:none;background:#EEF2FF;border-top:1px solid #C7D2FE;padding:10px 18px;font-size:13px;color:#3730A3">
+          <i class="bi bi-info-circle"></i> <strong>Chế độ đặt chữ ký:</strong> Rê chuột vào vùng cần đặt stamp chữ ký số → nhả chuột để xác nhận.
+          <button class="btn-outline-custom" id="sw-cancel-sign-mode" style="margin-left:14px;padding:4px 12px">Huỷ</button>
+          <button class="btn-primary-custom" id="sw-confirm-sign" style="margin-left:8px;padding:4px 12px" disabled><i class="bi bi-check-lg"></i> Hoàn thành & Ký</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- USB Token Signing Progress Overlay -->
+<div id="token-progress-overlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.85);z-index:5000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:18px;padding:32px;max-width:480px;width:90%;text-align:center">
+    <div id="tp-icon" style="width:80px;height:80px;border-radius:50%;background:#EBF5FF;color:#1A56DB;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 18px"><i class="bi bi-usb-drive"></i></div>
+    <div id="tp-title" style="font-size:18px;font-weight:700;margin-bottom:6px">Đang kết nối USB Token…</div>
+    <div id="tp-desc" style="font-size:13px;color:var(--text-secondary);margin-bottom:20px">Vui lòng đảm bảo USB Token đã được cắm vào máy tính</div>
+    <div style="margin-bottom:18px">
+      <div style="height:8px;background:#E5E7EB;border-radius:99px;overflow:hidden;margin-bottom:8px">
+        <div id="tp-progress" style="height:100%;background:linear-gradient(90deg,#1A56DB,#3F83F8);width:0%;transition:width .4s ease"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted)">
+        <span id="tp-step-label">Bước 1/5</span><span id="tp-percent">0%</span>
+      </div>
+    </div>
+    <div id="tp-steps" style="text-align:left;font-size:12.5px;line-height:1.9">
+      <div class="tp-step" data-step="1"><i class="bi bi-circle"></i> Kết nối USB Token</div>
+      <div class="tp-step" data-step="2"><i class="bi bi-circle"></i> Đọc chứng thư số</div>
+      <div class="tp-step" data-step="3"><i class="bi bi-circle"></i> Xác thực PIN</div>
+      <div class="tp-step" data-step="4"><i class="bi bi-circle"></i> Ký số tài liệu</div>
+      <div class="tp-step" data-step="5"><i class="bi bi-circle"></i> Tải lên Dropbox</div>
+    </div>
+    <button id="tp-close" style="display:none;margin-top:20px;width:100%;padding:11px;background:#059669;color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer">Hoàn tất</button>
+  </div>
+</div>
+
+<style>
+  .sw-step { font-size:11.5px; padding:4px 10px; border-radius:99px; background:#F3F4F6; color:#9CA3AF; }
+  .sw-step.active { background:#EBF5FF; color:#1A56DB; font-weight:600; }
+  .sw-step.done { background:#ECFDF5; color:#059669; }
+
+  .tp-step { color:#9CA3AF; }
+  .tp-step.active { color:#1A56DB; font-weight:500; }
+  .tp-step.done   { color:#059669; }
+  .tp-step.active i, .tp-step.done i { font-weight:700; }
+
+  /* Signature drag box */
+  .sw-sig-box {
+    position:absolute; border:2px dashed #1A56DB;
+    background:rgba(63,131,248,.12); cursor:move;
+    pointer-events:all; min-width:80px; min-height:30px;
+  }
+  .sw-sig-box.placed { border-style:solid; background:rgba(5,150,105,.15); border-color:#059669; }
+  .sw-sig-box .sw-sig-label {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-size:11px; font-weight:600; color:#1A56DB; pointer-events:none;
+    white-space:nowrap;
+  }
+  .sw-sig-box.placed .sw-sig-label { color:#059669; }
+  #sw-canvas-wrapper.sig-mode { cursor:crosshair !important; }
+</style>
+
+<!-- Old simple sign modal (deprecated, kept for fallback) -->
+<div class="modal fade" id="signModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Phê duyệt tài liệu</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="sign-confirm-body">
+    <div class="sign-confirm-doc">
+      <div class="sign-confirm-doc-icon"><i class="bi bi-file-earmark-pdf"></i></div>
+      <div style="flex:1">
+        <div style="font-weight:600" id="sign-doc-name"></div>
+        <div style="font-size:12px;color:var(--text-muted)" id="sign-doc-id"></div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px" id="sign-doc-sender"></div>
+      </div>
+      <a class="btn-outline-custom" id="sign-doc-view" href="#" target="_blank"><i class="bi bi-eye"></i> Xem file</a>
+    </div>
+    <div id="sign-doc-attachments" style="margin-bottom:16px"></div>
+    <div class="nd-form-group">
+      <label class="nd-label">Phương thức ký</label>
+      <select class="nd-input" id="sign-method">
+        <option value="usb_token">USB Token</option>
+        <option value="remote">Remote Signing (Cloud CA)</option>
+        <option value="vgca">VGCA Sign Service</option>
+      </select>
+    </div>
+    <div class="nd-form-group" id="otp-group" style="display:none">
+      <label class="nd-label"><i class="bi bi-shield-lock"></i> Mã OTP (xác thực 2 lớp)</label>
+      <input type="text" class="sign-otp-input" id="sign-otp" maxlength="6" placeholder="000000" autocomplete="one-time-code">
+      <div style="font-size:12px;color:var(--text-muted);margin-top:6px;text-align:center">Nhập mã từ ứng dụng Authenticator</div>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="sign-final-btn" id="btn-confirm-sign" style="flex:1">
+        <div class="btn-spinner"></div>
+        <span><i class="bi bi-check-circle"></i> Phê duyệt & Ký</span>
+      </button>
+      <button class="btn-doc-action reject" id="btn-reject-sign" style="flex:0 0 auto;padding:13px 20px;font-size:15px;min-height:auto">
+        <i class="bi bi-x-circle"></i> Từ chối
+      </button>
+    </div>
+  </div>
+</div></div></div>
+
+<!-- Toast Container -->
+<div id="esign-toast-container" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+<script type="module">
+  import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+  window.pdfjsLib = pdfjsLib;
+</script>
+<script src="/js/api.js"></script>
+<script src="/js/sign-workflow.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

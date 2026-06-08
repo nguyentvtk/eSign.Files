@@ -1,0 +1,18 @@
+node_modules/
+data/
+uploads/
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.vercel
+*.log
+
+# Legacy GAS files (giữ tham khảo)
+# code.gs
+# _javascript.html
+# _stylesheet.html
+# _toasts.html
+# worker.js

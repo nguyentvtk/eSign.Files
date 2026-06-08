@@ -1,0 +1,573 @@
+<style>
+  /* ════ Bootstrap Toast Override — eSign Design System ════ */
+
+  /* Container fixed bottom-end (mobile: bottom full-width) */
+  #esign-toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 380px;
+    width: calc(100% - 48px);
+    pointer-events: none;
+  }
+
+  @media (max-width: 575.98px) {
+    #esign-toast-container {
+      bottom: 16px;
+      right: 0;
+      left: 0;
+      width: auto;
+      margin: 0 12px;
+      max-width: none;
+    }
+  }
+
+  /* Base toast */
+  .esign-toast {
+    pointer-events: all;
+    background: #1F2937;
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.25), 0 2px 8px rgba(0,0,0,.15);
+    overflow: hidden;
+    min-width: 300px;
+    animation: toastSlideIn .3s cubic-bezier(.34,1.3,.64,1);
+  }
+  .esign-toast.hiding {
+    animation: toastSlideOut .25s ease forwards;
+  }
+  @keyframes toastSlideIn  { from { opacity:0; transform:translateY(20px) scale(.94); } to { opacity:1; transform:none; } }
+  @keyframes toastSlideOut { to   { opacity:0; transform:translateY(12px) scale(.96); } }
+
+  /* Color accent left-border per type */
+  .esign-toast.toast-success  { border-left: 4px solid #059669; }
+  .esign-toast.toast-error    { border-left: 4px solid #EF4444; }
+  .esign-toast.toast-warning  { border-left: 4px solid #D97706; }
+  .esign-toast.toast-info     { border-left: 4px solid #3F83F8; }
+  .esign-toast.toast-loading  { border-left: 4px solid #9CA3AF; }
+
+  /* Header */
+  .esign-toast .toast-header {
+    background: transparent;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    padding: 11px 14px 9px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .esign-toast .toast-header .toast-icon {
+    font-size: 17px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+  .toast-success  .toast-icon { color: #34D399; }
+  .toast-error    .toast-icon { color: #F87171; }
+  .toast-warning  .toast-icon { color: #FBB040; }
+  .toast-info     .toast-icon { color: #60A5FA; }
+  .toast-loading  .toast-icon { color: #9CA3AF; }
+
+  .esign-toast .toast-header .toast-title {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #F9FAFB;
+    flex: 1;
+  }
+  .esign-toast .toast-header .btn-close {
+    filter: invert(1);
+    opacity: .5;
+    width: 16px; height: 16px;
+    margin-left: auto;
+  }
+  .esign-toast .toast-header .btn-close:hover { opacity: .9; }
+
+  /* Body */
+  .esign-toast .toast-body {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    font-size: 13px;
+    color: #D1D5DB;
+    padding: 9px 14px 12px;
+    line-height: 1.5;
+  }
+  .esign-toast .toast-body strong { color: #F9FAFB; }
+
+  /* Progress bar under header */
+  .toast-progress {
+    height: 3px;
+    background: rgba(255,255,255,.12);
+    margin: 0 0 0 14px;
+  }
+  .toast-progress-fill {
+    height: 100%;
+    border-radius: 0 99px 99px 0;
+    transition: width linear;
+  }
+  .toast-success  .toast-progress-fill { background: #34D399; }
+  .toast-error    .toast-progress-fill { background: #F87171; }
+  .toast-warning  .toast-progress-fill { background: #FBB040; }
+  .toast-info     .toast-progress-fill { background: #60A5FA; }
+
+  /* Loading spinner inside toast */
+  .toast-loading-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(156,163,175,.4);
+    border-top-color: #9CA3AF;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  /* Action buttons inside toast */
+  .toast-actions {
+    display: flex;
+    gap: 6px;
+    padding: 0 14px 12px;
+  }
+  .toast-action-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: 'Be Vietnam Pro', sans-serif;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.08);
+    color: #F9FAFB;
+    transition: background .15s;
+    flex: 1;
+    text-align: center;
+  }
+  .toast-action-btn:hover { background: rgba(255,255,255,.16); }
+  .toast-action-btn.primary { background: #1A56DB; border-color: #1E429F; }
+  .toast-action-btn.primary:hover { background: #1E429F; }
+</style>
+
+<!-- Toast Container -->
+<div id="esign-toast-container" aria-live="polite" aria-atomic="false"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════════
+   ESIGN TOAST SYSTEM  v2.0  —  Bootstrap 5 Toast + Custom Design
+   ─────────────────────────────────────────────────────────────────────────────
+   Thay thế hoàn toàn module Toast cũ (dùng div tĩnh).
+   Sử dụng Bootstrap Toast API chính thức + animation tùy chỉnh.
+
+   API:
+     Toast.success(message, options?)
+     Toast.error(message, options?)
+     Toast.warning(message, options?)
+     Toast.info(message, options?)
+     Toast.loading(message)         → trả về id để dismiss
+     Toast.dismiss(id)
+     Toast.dismissAll()
+
+     // Preset notifications cho các trường hợp cụ thể:
+     Toast.network.error(detail?)   → Lỗi kết nối mạng
+     Toast.network.retry(fn)        → Kết nối lại
+     Toast.auth.missingInfo(field?) → Thiếu thông tin người dùng
+     Toast.token.notFound()         → Không tìm thấy USB Token
+     Toast.token.pinCancelled()     → Huỷ nhập mã PIN
+     Toast.token.connected(cert)    → Đã kết nối Token
+     Toast.sign.success(docName)    → Ký thành công
+     Toast.sign.failed(reason)      → Ký thất bại
+     Toast.save.success(fileName)   → Lưu Drive thành công
+     Toast.save.failed(reason)      → Lưu Drive thất bại
+     Toast.log.success(stt)         → Ghi log thành công
+══════════════════════════════════════════════════════════════════════════════ */
+const Toast = (() => {
+  'use strict';
+
+  /* ── Config ─────────────────────────────────────────────────────────── */
+  const DEFAULTS = {
+    autohide  : true,
+    delay     : 4000,    // ms
+    animate   : true,
+    progress  : true,    // hiện progress bar đếm ngược
+  };
+
+  const ICONS = {
+    success : 'bi-check-circle-fill',
+    error   : 'bi-x-circle-fill',
+    warning : 'bi-exclamation-triangle-fill',
+    info    : 'bi-info-circle-fill',
+    loading : null,  // spinner
+  };
+
+  const TITLES = {
+    success : 'Thành công',
+    error   : 'Lỗi',
+    warning : 'Cảnh báo',
+    info    : 'Thông báo',
+    loading : 'Đang xử lý…',
+  };
+
+  /* ── State ──────────────────────────────────────────────────────────── */
+  let _idCounter = 0;
+  const _active  = new Map();  // id → { bsToast, timer, progressTimer }
+
+  /* ── Container ──────────────────────────────────────────────────────── */
+  const _getContainer = () => document.getElementById('esign-toast-container');
+
+  /* ════════════════════════════════════════════════════════════════════
+     CORE RENDER
+  ════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Tạo và hiển thị một toast.
+   *
+   * @param {string} type     - 'success'|'error'|'warning'|'info'|'loading'
+   * @param {string} message  - Nội dung hiển thị (hỗ trợ HTML nhẹ)
+   * @param {Object} opts     - { title, delay, autohide, progress, actions }
+   *   actions: [{ label, primary, onClick }]
+   * @returns {string} Toast ID để dismiss thủ công
+   */
+  function show(type, message, opts = {}) {
+    const id      = 'etst_' + (++_idCounter);
+    const delay   = opts.delay   ?? DEFAULTS.delay;
+    const autohide= opts.autohide ?? DEFAULTS.autohide;
+    const progress= opts.progress ?? DEFAULTS.progress;
+    const title   = opts.title   ?? TITLES[type] ?? 'Thông báo';
+    const actions = opts.actions ?? [];
+    const isLoad  = type === 'loading';
+
+    /* ── Build DOM ── */
+    const el = document.createElement('div');
+    el.className  = `esign-toast toast-${type} show`;
+    el.id         = id;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    el.setAttribute('aria-atomic', 'true');
+
+    const iconHTML = isLoad
+      ? `<div class="toast-loading-spinner"></div>`
+      : `<i class="bi ${ICONS[type]} toast-icon"></i>`;
+
+    const actionsHTML = actions.length ? `
+      <div class="toast-actions">
+        ${actions.map(a => `
+          <button class="toast-action-btn ${a.primary ? 'primary' : ''}" data-action="${a.label}">
+            ${a.label}
+          </button>`).join('')}
+      </div>` : '';
+
+    el.innerHTML = `
+      <div class="toast-header">
+        ${iconHTML}
+        <span class="toast-title">${_esc(title)}</span>
+        ${autohide && !isLoad ? '<button type="button" class="btn-close" aria-label="Đóng"></button>' : ''}
+      </div>
+      <div class="toast-body">${message}</div>
+      ${actionsHTML}
+      ${progress && autohide && !isLoad ? `
+        <div class="toast-progress">
+          <div class="toast-progress-fill" id="${id}_prog" style="width:100%;transition:width ${delay}ms linear;"></div>
+        </div>` : ''}`;
+
+    _getContainer()?.appendChild(el);
+
+    /* ── Bind close button ── */
+    el.querySelector('.btn-close')?.addEventListener('click', () => dismiss(id));
+
+    /* ── Bind action buttons ── */
+    actions.forEach(action => {
+      const btn = el.querySelector(`[data-action="${action.label}"]`);
+      btn?.addEventListener('click', () => {
+        action.onClick?.();
+        if (action.dismissOnClick !== false) dismiss(id);
+      });
+    });
+
+    /* ── Auto-dismiss timer ── */
+    let timer = null;
+    if (autohide && !isLoad) {
+      // Kick-start progress bar
+      requestAnimationFrame(() => {
+        const prog = document.getElementById(`${id}_prog`);
+        if (prog) prog.style.width = '0%';
+      });
+
+      timer = setTimeout(() => dismiss(id), delay);
+
+      // Pause on hover
+      el.addEventListener('mouseenter', () => {
+        clearTimeout(timer);
+        const prog = document.getElementById(`${id}_prog`);
+        if (prog) prog.style.transition = 'none';
+      });
+      el.addEventListener('mouseleave', () => {
+        const prog = document.getElementById(`${id}_prog`);
+        if (prog) { prog.style.transition = `width ${delay * 0.3}ms linear`; prog.style.width = '0%'; }
+        timer = setTimeout(() => dismiss(id), delay * 0.3);
+      });
+    }
+
+    _active.set(id, { el, timer });
+    return id;
+  }
+
+  /* ── Dismiss ────────────────────────────────────────────────────────── */
+  function dismiss(id) {
+    const entry = _active.get(id);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    const el = entry.el;
+    el.classList.add('hiding');
+    setTimeout(() => { el.remove(); _active.delete(id); }, 280);
+  }
+
+  function dismissAll() {
+    _active.forEach((_, id) => dismiss(id));
+  }
+
+  /* ── Convenience wrappers ────────────────────────────────────────────── */
+  const success  = (msg, opts) => show('success', msg, opts);
+  const error    = (msg, opts) => show('error',   msg, opts);
+  const warning  = (msg, opts) => show('warning', msg, opts);
+  const info     = (msg, opts) => show('info',    msg, opts);
+  const loading  = (msg, opts) => show('loading', msg, { autohide: false, ...opts });
+
+  /* ── HTML escape ────────────────────────────────────────────────────── */
+  function _esc(str) {
+    return String(str ?? '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     PRESET NOTIFICATIONS — eSign Business Cases
+  ════════════════════════════════════════════════════════════════════ */
+
+  const network = {
+    /** Lỗi kết nối mạng chung */
+    error(detail = '') {
+      return error(
+        `Không thể kết nối đến máy chủ.${detail ? ` <strong>${_esc(detail)}</strong>` : ''} Kiểm tra kết nối mạng và thử lại.`,
+        {
+          title   : 'Lỗi kết nối mạng',
+          delay   : 7000,
+          actions : [{ label: 'Thử lại', primary: true, dismissOnClick: true,
+                       onClick: () => window.location.reload() }],
+        }
+      );
+    },
+
+    /** Đang retry với thông tin lần thử */
+    retry(attempt, max, onCancel) {
+      return warning(
+        `Đang kết nối lại lần <strong>${attempt}/${max}</strong>…`,
+        {
+          title    : 'Đang thử lại',
+          autohide : false,
+          actions  : onCancel ? [{ label: 'Huỷ', onClick: onCancel }] : [],
+        }
+      );
+    },
+
+    /** Kết nối thành công sau khi mất */
+    restored() {
+      return success('Kết nối mạng đã được khôi phục.', { title: 'Đã kết nối', delay: 3000 });
+    },
+  };
+
+  const auth = {
+    /** Thiếu thông tin người dùng */
+    missingInfo(field = '') {
+      const fieldMsg = field ? ` Thiếu: <strong>${_esc(field)}</strong>.` : '';
+      return warning(
+        `Thông tin tài khoản không đầy đủ.${fieldMsg} Vui lòng đăng nhập lại.`,
+        {
+          title   : 'Thiếu thông tin người dùng',
+          delay   : 6000,
+          actions : [{ label: 'Đăng nhập lại', primary: true,
+                       onClick: () => Auth.handleLogout({ preventDefault: () => {} }) }],
+        }
+      );
+    },
+
+    /** Phiên đăng nhập hết hạn */
+    sessionExpired() {
+      return error(
+        'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.',
+        {
+          title    : 'Phiên hết hạn',
+          autohide : false,
+          actions  : [{ label: 'Đăng nhập lại', primary: true,
+                        onClick: () => Auth.handleLogout({ preventDefault: () => {} }) }],
+        }
+      );
+    },
+
+    /** Không có quyền truy cập */
+    noPermission(feature = '') {
+      return error(
+        `Bạn không có quyền thực hiện${feature ? ` "<strong>${_esc(feature)}</strong>"` : ' thao tác này'}.`,
+        { title: 'Không có quyền', delay: 5000 }
+      );
+    },
+  };
+
+  const token = {
+    /** Không tìm thấy USB Token */
+    notFound() {
+      return error(
+        'Không phát hiện USB Token. Hãy cắm thiết bị vào cổng USB và đảm bảo phần mềm Middleware đang chạy.',
+        {
+          title   : 'Không tìm thấy USB Token',
+          delay   : 8000,
+          actions : [
+            { label: 'Thử lại',   primary: true,  onClick: () => UsbTokenSigner.retry?.() },
+            { label: 'Huỷ bỏ',   primary: false,  onClick: () => UsbTokenSigner.cancel?.() },
+          ],
+        }
+      );
+    },
+
+    /** User huỷ nhập mã PIN */
+    pinCancelled() {
+      return warning(
+        'Bạn đã huỷ nhập mã PIN. Tài liệu chưa được ký số.',
+        { title: 'Đã huỷ nhập PIN', delay: 4000 }
+      );
+    },
+
+    /** Mã PIN sai */
+    pinWrong(attemptsLeft = 0) {
+      const left = attemptsLeft > 0 ? ` Còn <strong>${attemptsLeft}</strong> lần thử.` : ' Token có thể bị khóa.';
+      return error(
+        `Mã PIN không chính xác.${left}`,
+        { title: 'Sai mã PIN', delay: 5000 }
+      );
+    },
+
+    /** USB Token đã được kết nối thành công */
+    connected(certSubject = '') {
+      const subj = certSubject ? ` — <strong>${_esc(certSubject.split(',')[0]?.replace('CN=',''))}</strong>` : '';
+      return success(
+        `USB Token đã được nhận diện${subj}. Đang chuẩn bị ký…`,
+        { title: 'Token đã kết nối', delay: 3500 }
+      );
+    },
+
+    /** Middleware không chạy */
+    middlewareMissing(provider = '') {
+      const prov = provider ? ` <strong>${_esc(provider)}</strong>` : '';
+      return error(
+        `Phần mềm Middleware${prov} chưa chạy. Khởi động ứng dụng ký số và thử lại.`,
+        { title: 'Middleware không hoạt động', delay: 8000 }
+      );
+    },
+
+    /** Chứng thư hết hạn */
+    certExpired() {
+      return error(
+        'Chứng thư số của USB Token đã hết hạn. Liên hệ CA để gia hạn.',
+        { title: 'Chứng thư hết hạn', delay: 8000 }
+      );
+    },
+  };
+
+  const sign = {
+    /** Ký thành công */
+    success(docName = '') {
+      const doc = docName ? ` <strong>"${_esc(docName)}"</strong>` : '';
+      return success(
+        `Tài liệu${doc} đã được ký số thành công và đang được lưu trữ.`,
+        { title: 'Ký thành công ✓', delay: 5000 }
+      );
+    },
+
+    /** Ký thất bại */
+    failed(reason = '') {
+      return error(
+        `Ký tài liệu thất bại.${reason ? ` Nguyên nhân: <strong>${_esc(reason)}</strong>` : ''} Vui lòng thử lại.`,
+        { title: 'Ký thất bại', delay: 6000 }
+      );
+    },
+
+    /** Stamp PDF thất bại */
+    stampFailed() {
+      return warning(
+        'Không thể nhúng hình ảnh chữ ký vào PDF. File được ký nhưng thiếu stamp visual.',
+        { title: 'Lỗi stamp PDF', delay: 6000 }
+      );
+    },
+  };
+
+  const save = {
+    /** Lưu Drive thành công */
+    success(fileName = '') {
+      const fn = fileName ? ` <strong>"${_esc(fileName)}"</strong>` : '';
+      return success(
+        `File${fn} đã được lưu vào Google Drive thành công.`,
+        { title: 'Lưu Drive thành công', delay: 5000 }
+      );
+    },
+
+    /** Lưu Drive thất bại */
+    failed(reason = '', onRetry) {
+      return error(
+        `Không thể lưu file lên Drive.${reason ? ` <strong>${_esc(reason)}</strong>` : ''} File vẫn còn trong bộ nhớ trình duyệt.`,
+        {
+          title   : 'Lưu Drive thất bại',
+          delay   : 8000,
+          actions : [
+            { label: 'Thử lại',        primary: true,  onClick: onRetry },
+            { label: 'Tải xuống local', primary: false, onClick: () => PdfStamper?.downloadLast?.() },
+          ],
+        }
+      );
+    },
+
+    /** Đang lưu (loading) */
+    uploading(fileName = '') {
+      return loading(`Đang tải lên Google Drive${fileName ? `: <strong>${_esc(fileName)}</strong>` : ''}…`,
+        { title: 'Đang lưu…' });
+    },
+  };
+
+  const log = {
+    /** Ghi log thành công */
+    success(stt) {
+      return info(
+        `Giao dịch #<strong>${stt ?? '—'}</strong> đã được ghi nhật ký.`,
+        { title: 'Nhật ký giao dịch', delay: 3000, progress: false }
+      );
+    },
+
+    /** Ghi log thất bại (cảnh báo nhẹ, không block) */
+    failed() {
+      return warning(
+        'Không thể ghi nhật ký giao dịch. Dữ liệu vẫn được lưu trên Drive.',
+        { title: 'Cảnh báo log', delay: 5000 }
+      );
+    },
+  };
+
+  const doc = {
+    /** Không tìm thấy tài liệu */
+    notFound(maDoc = '') {
+      return error(
+        `Không tìm thấy tài liệu${maDoc ? ` <strong>${_esc(maDoc)}</strong>` : ''}. Tài liệu có thể đã bị xóa hoặc bạn không có quyền truy cập.`,
+        { title: 'Không tìm thấy tài liệu', delay: 6000 }
+      );
+    },
+
+    /** Tải tài liệu thành công */
+    loaded(count) {
+      return info(`Đã tải <strong>${count}</strong> tài liệu.`,
+        { title: 'Dữ liệu đã cập nhật', delay: 2500, progress: false });
+    },
+  };
+
+  /* ── Public API ──────────────────────────────────────────────────────── */
+  return {
+    show, dismiss, dismissAll,
+    success, error, warning, info, loading,
+    network, auth, token, sign, save, log, doc,
+  };
+
+})(); // end Toast
+</script>
