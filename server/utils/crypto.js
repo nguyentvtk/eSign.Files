@@ -1,7 +1,7 @@
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
-const SALT_ROUNDS = process.env.NODE_ENV === 'production' ? 12 : 4;
+const SALT_ROUNDS = process.env.NODE_ENV === 'production' ? 10 : 4;
 
 async function hashPassword(plain) {
   return bcrypt.hash(plain, SALT_ROUNDS);

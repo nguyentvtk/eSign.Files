@@ -16,6 +16,20 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { success: false, error: 'Quá nhiều lần thử. Vui lòng đợi 15 phút.' } }));
 
+// Database health check trước mọi route /api/*
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next();
+  try { require('./db/database').getDb(); next(); }
+  catch (e) {
+    console.error('[DB pre-check]', e.message, e.stack);
+    return res.status(503).json({
+      success: false,
+      error: 'Database không kết nối được.',
+      debug: { message: e.message, hasTurso: !!process.env.TURSO_DATABASE_URL, hasToken: !!process.env.TURSO_AUTH_TOKEN },
+    });
+  }
+});
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(config.upload.dir));
 
@@ -63,12 +77,19 @@ app.get('*', (req, res) => {
 });
 
 app.use((err, req, res, _next) => {
-  console.error('[Error]', err.message);
+  console.error('[Error]', err.message, err.stack);
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ success: false, error: `File vượt quá ${config.upload.maxSizeMB}MB.` });
   }
-  res.status(500).json({ success: false, error: 'Lỗi máy chủ nội bộ.' });
+  // Expose error trên Vercel để debug nhanh (có thể tắt sau khi ổn định)
+  const debug = process.env.VERCEL || process.env.NODE_ENV !== 'production';
+  res.status(500).json({
+    success: false,
+    error: 'Lỗi máy chủ nội bộ.',
+    ...(debug ? { debug: { message: err.message, type: err.constructor?.name } } : {}),
+  });
 });
+
 
 function seedAdmin() {
   const db = getDb();
