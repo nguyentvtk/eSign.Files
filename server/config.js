@@ -23,7 +23,8 @@ module.exports = {
     issuer: process.env.OTP_ISSUER || 'eSign',
   },
   upload: {
-    dir: _resolveRelative(process.env.UPLOAD_DIR, 'uploads'),
+    // Vercel serverless: chỉ /tmp writable. Tự dùng /tmp/uploads nếu chạy trên Vercel.
+    dir: process.env.VERCEL ? '/tmp/uploads' : _resolveRelative(process.env.UPLOAD_DIR, 'uploads'),
     maxSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 25,
   },
   remoteCa: {
