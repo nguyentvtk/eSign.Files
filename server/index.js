@@ -9,6 +9,9 @@ const { hashPassword } = require('./utils/crypto');
 
 const app = express();
 
+// Vercel/Cloudflare/Nginx có proxy phía trước — cần trust để rate-limit & req.ip hoạt động đúng
+app.set('trust proxy', 1);
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));

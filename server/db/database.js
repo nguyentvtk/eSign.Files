@@ -32,9 +32,14 @@ function getDb() {
       });
       try { _db.sync(); } catch (e) { console.error('[DB sync]', e.message); }
     } else {
-      const dir = path.dirname(config.db.path);
+      // Local mode. Vercel: /tmp writable; dev: dùng config.db.path
+      const dbPath = process.env.VERCEL ? '/tmp/esign-local.db' : config.db.path;
+      const dir = path.dirname(dbPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      _db = new Database(config.db.path);
+      _db = new Database(dbPath);
+      if (process.env.VERCEL) {
+        console.warn('[DB] ⚠️  TURSO_DATABASE_URL missing — using ephemeral /tmp SQLite (data sẽ mất khi function restart). Cấu hình Turso env vars trên Vercel Dashboard.');
+      }
     }
 
     // Pragmas — silent fail nếu Turso replica không support
