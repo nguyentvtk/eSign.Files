@@ -25,5 +25,8 @@
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
     "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "vercel": "^54.9.1"
   }
 }

@@ -2,9 +2,9 @@
    Notification service — Telegram + Email
 ═══════════════════════════════════════════════════════════ */
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8604288755:AAFIn9KauceXjfcIHC9loF8h6SXCJIOjUMQ';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '-1002010998673';
-const TELEGRAM_TOPIC_ID = process.env.TELEGRAM_TOPIC_ID || '3027';
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_TOPIC_ID = process.env.TELEGRAM_TOPIC_ID || '';
 
 const SMTP_HOST = process.env.SMTP_HOST || '';
 const SMTP_USER = process.env.SMTP_USER || '';
