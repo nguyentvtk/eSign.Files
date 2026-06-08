@@ -114,7 +114,11 @@ window.SignWorkflow = (() => {
       list.innerHTML = '<div style="font-size:13px;color:var(--text-muted)">Không có file đính kèm.</div>';
       return;
     }
-    list.innerHTML = _doc.attachments.map(a => {
+    const hasDocx = _doc.attachments.some(a => (a.file_type||'').toUpperCase() === 'DOCX');
+    const hint = hasDocx ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#92400E;margin-bottom:10px;width:100%">
+      <i class="bi bi-info-circle"></i> <b>Cách sửa file DOCX:</b> Tải file về máy → mở bằng Word/LibreOffice → chỉnh sửa → Save As <b>PDF</b> → quay lại bấm nút <b>"Tải PDF thay thế"</b> để cập nhật file chính.
+    </div>` : '';
+    list.innerHTML = hint + _doc.attachments.map(a => {
       const ext = (a.file_type || '').toUpperCase();
       const icon = ext === 'PDF' ? 'bi-file-earmark-pdf' : 'bi-file-earmark-word';
       const color = ext === 'PDF' ? '#DC2626' : '#1A56DB';
@@ -125,8 +129,7 @@ window.SignWorkflow = (() => {
           <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.file_name)}</div>
           <div style="font-size:11px;color:#9CA3AF">${fmtSize(a.file_size)} • ${ext}</div>
         </div>
-        <a href="${esc(a.file_url)}" target="_blank" class="btn-outline-custom" style="padding:5px 10px;font-size:12px" title="Tải về"><i class="bi bi-download"></i></a>
-        ${isDocx ? `<button class="btn-primary-custom" style="padding:5px 10px;font-size:12px" onclick="SignWorkflow._convertAndReplace(${a.id})" title="Chuyển sang PDF & thay thế file chính"><i class="bi bi-arrow-repeat"></i> PDF</button>` : ''}
+        <a href="${esc(a.file_url)}" target="_blank" download class="btn-outline-custom" style="padding:5px 10px;font-size:12px" title="${isDocx?'Tải DOCX về máy để sửa, sau đó dùng nút \"Tải PDF thay thế\" để upload PDF sau khi sửa':'Tải về'}"><i class="bi bi-download"></i>${isDocx?' Tải về sửa':''}</a>
       </div>`;
     }).join('');
   }
