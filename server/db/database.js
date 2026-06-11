@@ -46,6 +46,9 @@ function getDb() {
     try { _db.pragma('journal_mode = WAL'); } catch {}
     try { _db.pragma('foreign_keys = ON'); } catch {}
 
+    // libsql có thể trả về _metadata trong row — strip để response sạch
+    _wrapPrepareToStripMetadata(_db);
+
     // Apply schema chỉ 1 lần / cold start
     if (!_schemaApplied) {
       try {
@@ -69,6 +72,32 @@ function close() {
   if (_db && _db.close) try { _db.close(); } catch {}
   _db = null;
   _schemaApplied = false;
+}
+
+/**
+ * Wrap db.prepare(...) → strip libsql `_metadata` từ kết quả .get()/.all()
+ * để response API sạch (không leak metadata internal).
+ */
+function _wrapPrepareToStripMetadata(db) {
+  if (db.__metaPatched) return;
+  const origPrepare = db.prepare.bind(db);
+  db.prepare = (sql) => {
+    const stmt = origPrepare(sql);
+    const origGet = stmt.get.bind(stmt);
+    const origAll = stmt.all.bind(stmt);
+    stmt.get = (...args) => {
+      const r = origGet(...args);
+      if (r && typeof r === 'object' && '_metadata' in r) delete r._metadata;
+      return r;
+    };
+    stmt.all = (...args) => {
+      const rows = origAll(...args);
+      if (Array.isArray(rows)) rows.forEach(r => { if (r && typeof r === 'object') delete r._metadata; });
+      return rows;
+    };
+    return stmt;
+  };
+  db.__metaPatched = true;
 }
 
 module.exports = { getDb, close };

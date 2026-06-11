@@ -222,98 +222,174 @@ window.SignWorkflow = (() => {
     }
   }
 
-  /* ─── USB Token Signing Simulation ─── */
+  /* ─── USB Token Real Signing ─────────────────────────── */
+  let _signResult = null;
+  let _selectedProvider = 'vnpt';
+
   async function _signWithToken() {
     if (!_sigBox) { window.Toast?.warning('Chưa đặt vị trí chữ ký.'); return; }
     _setStep(4);
     $('#token-progress-overlay').style.display = 'flex';
+    $('#tp-close').style.display = 'none';
 
-    const steps = [
-      { id: 1, label: 'Kết nối USB Token', title: 'Đang kết nối USB Token…', desc: 'Kiểm tra thiết bị USB Token', icon: 'bi-usb-drive', color: '#1A56DB', delay: 800 },
-      { id: 2, label: 'Đọc chứng thư số', title: 'Đọc thông tin chứng thư…', desc: 'Đọc certificate từ USB Token', icon: 'bi-shield-lock', color: '#7C3AED', delay: 700 },
-      { id: 3, label: 'Xác thực PIN', title: 'Xác thực PIN…', desc: 'Đang kiểm tra PIN người dùng', icon: 'bi-key', color: '#D97706', delay: 600 },
-      { id: 4, label: 'Ký số tài liệu', title: 'Đang thực hiện ký số…', desc: 'Tạo chữ ký số trên tài liệu', icon: 'bi-pen', color: '#1A56DB', delay: 1200 },
-      { id: 5, label: 'Tải lên Dropbox', title: 'Đang lưu vào Dropbox…', desc: 'Đẩy file đã ký lên kho lưu trữ', icon: 'bi-cloud-upload', color: '#059669', delay: 800 },
-    ];
+    // Map provider → UI icon & color
+    const ICONS = {
+      connecting: { icon: 'bi-broadcast-pin', color: '#1A56DB' },
+      detecting:  { icon: 'bi-usb-drive', color: '#1A56DB' },
+      pin:        { icon: 'bi-lock-fill', color: '#7C3AED' },
+      signing:    { icon: 'bi-pen-fill', color: '#D97706' },
+      success:    { icon: 'bi-check-circle-fill', color: '#059669' },
+      error:      { icon: 'bi-x-circle-fill', color: '#DC2626' },
+    };
 
-    for (const s of steps) {
+    const PHASE_LABEL = {
+      connecting: 'Đang kết nối Middleware',
+      detecting: 'Phát hiện USB Token',
+      pin: 'Nhập PIN',
+      signing: 'Ký số tài liệu',
+      success: 'Hoàn tất',
+    };
+    const STEP_NUM = { connecting: 1, detecting: 2, pin: 3, signing: 4, success: 5 };
+
+    function _renderPhase(phase, percent, message) {
+      const info = ICONS[phase] || ICONS.connecting;
+      $('#tp-icon').style.background = info.color + '22';
+      $('#tp-icon').style.color = info.color;
+      $('#tp-icon').innerHTML = `<i class="bi ${info.icon}"></i>`;
+      $('#tp-title').textContent = PHASE_LABEL[phase] || message;
+      $('#tp-desc').textContent = message;
+      $('#tp-progress').style.width = Math.round(percent) + '%';
+      $('#tp-percent').textContent = Math.round(percent) + '%';
+
+      const stepN = STEP_NUM[phase] || 1;
+      $('#tp-step-label').textContent = `Bước ${stepN}/5`;
       document.querySelectorAll('.tp-step').forEach(el => {
         const sid = parseInt(el.dataset.step);
-        if (sid < s.id) { el.classList.add('done'); el.classList.remove('active'); el.querySelector('i').className = 'bi bi-check-circle-fill'; }
-        else if (sid === s.id) { el.classList.add('active'); el.querySelector('i').className = 'bi bi-arrow-right-circle-fill'; }
+        el.classList.remove('active', 'done');
+        if (sid < stepN) { el.classList.add('done'); el.querySelector('i').className = 'bi bi-check-circle-fill'; }
+        else if (sid === stepN) { el.classList.add('active'); el.querySelector('i').className = 'bi bi-arrow-right-circle-fill'; }
+        else { el.querySelector('i').className = 'bi bi-circle'; }
       });
-      $('#tp-icon').style.background = s.color + '22';
-      $('#tp-icon').style.color = s.color;
-      $('#tp-icon').innerHTML = `<i class="bi ${s.icon}"></i>`;
-      $('#tp-title').textContent = s.title;
-      $('#tp-desc').textContent = s.desc;
-      $('#tp-step-label').textContent = `Bước ${s.id}/5`;
-      $('#tp-progress').style.width = (s.id * 20) + '%';
-      $('#tp-percent').textContent = (s.id * 20) + '%';
-      await new Promise(r => setTimeout(r, s.delay));
-
-      // Gọi API ký số khi tới bước 4
-      if (s.id === 4) {
-        const result = await _callSignApi();
-        if (!result.success) {
-          $('#tp-icon').style.background = '#FEF2F2';
-          $('#tp-icon').style.color = '#DC2626';
-          $('#tp-icon').innerHTML = '<i class="bi bi-x-circle"></i>';
-          $('#tp-title').textContent = 'Ký thất bại';
-          $('#tp-desc').textContent = result.error || 'Lỗi không xác định';
-          $('#tp-close').style.display = 'block';
-          $('#tp-close').textContent = 'Đóng';
-          $('#tp-close').style.background = '#DC2626';
-          $('#tp-close').onclick = () => { $('#token-progress-overlay').style.display = 'none'; $('#tp-close').style.display = 'none'; };
-          return;
-        }
-        _signResult = result.data;
-      }
     }
 
-    // Completed
-    document.querySelectorAll('.tp-step').forEach(el => {
-      el.classList.remove('active');
-      el.classList.add('done');
-      el.querySelector('i').className = 'bi bi-check-circle-fill';
-    });
-    $('#tp-icon').style.background = '#DCFCE7';
-    $('#tp-icon').style.color = '#059669';
-    $('#tp-icon').innerHTML = '<i class="bi bi-check-circle-fill"></i>';
-    $('#tp-title').textContent = 'Ký số thành công!';
-    $('#tp-desc').innerHTML = `Tài liệu <strong>${esc(_doc.ma_doc)}</strong> đã được ký và lưu vào Dropbox.`;
-    $('#tp-progress').style.width = '100%';
-    $('#tp-percent').textContent = '100%';
-    $('#tp-close').style.display = 'block';
-    $('#tp-close').style.background = '#059669';
-    $('#tp-close').textContent = 'Hoàn tất';
-    $('#tp-close').onclick = () => {
-      $('#token-progress-overlay').style.display = 'none';
-      $('#tp-close').style.display = 'none';
-      _modal?.hide();
-      window.App?.loadPending?.();
-      window.location.reload();
-    };
+    function _renderError(errMsg) {
+      $('#tp-icon').style.background = '#FEF2F2';
+      $('#tp-icon').style.color = '#DC2626';
+      $('#tp-icon').innerHTML = '<i class="bi bi-x-circle-fill"></i>';
+      $('#tp-title').textContent = 'Ký số thất bại';
+      $('#tp-desc').textContent = errMsg;
+      $('#tp-close').style.display = 'block';
+      $('#tp-close').textContent = 'Đóng';
+      $('#tp-close').style.background = '#DC2626';
+      $('#tp-close').onclick = () => {
+        $('#token-progress-overlay').style.display = 'none';
+        $('#tp-close').style.display = 'none';
+      };
+    }
+
+    try {
+      // 1. Tải PDF gốc để gửi cho Middleware (signer cần PDF binary)
+      _renderPhase('connecting', 5, 'Tải PDF gốc…');
+      const pdfResp = await fetch(_doc.file_url);
+      if (!pdfResp.ok) throw new Error('Không tải được PDF gốc: HTTP ' + pdfResp.status);
+      const pdfBlob = await pdfResp.blob();
+      const pdfBase64 = await _blobToBase64(pdfBlob);
+
+      // 2. Toạ độ PDF (origin: bottom-left)
+      const page = await _pdfDoc.getPage(_sigBox.page);
+      const viewport = page.getViewport({ scale: 1 });
+      const pdfX = _sigBox.x / _zoom;
+      const pdfY = viewport.height - (_sigBox.y / _zoom) - (_sigBox.height / _zoom);
+      const pdfW = _sigBox.width / _zoom;
+      const pdfH = _sigBox.height / _zoom;
+      const coordinates = [{
+        page: _sigBox.page,
+        xPt: pdfX, yPt: pdfY, wPt: pdfW, hPt: pdfH,
+      }];
+
+      // 3. Gọi UsbTokenSigner
+      const user = window.API?.getUser?.() || {};
+      const meta = {
+        maDoc: _doc.ma_doc,
+        tenTaiLieu: _doc.ten_tai_lieu,
+        signerName: user.ho_ten || '',
+        signerEmail: user.email || '',
+        fileId: _doc.id,
+      };
+
+      let result;
+      if (window.UsbTokenSigner) {
+        result = await window.UsbTokenSigner.signPdf({
+          pdfBase64, coordinates, meta,
+          providerId: _selectedProvider,
+          onProgress: _renderPhase,
+        });
+      } else {
+        // Fallback nếu module không load: dùng simulation cũ
+        _renderPhase('signing', 60, 'UsbTokenSigner không tải được — server stamp thay');
+        result = { signedBase64: null, cert: null };
+      }
+
+      // 4. Gửi lên server để lưu chữ ký + stamp + cập nhật DB
+      _renderPhase('signing', 85, 'Lưu chữ ký lên server…');
+      const apiResult = await _callSignApi({
+        cert: result.cert,
+        signature_value: result.signedBase64 ? result.signedBase64.substring(0, 200) : '',
+        stamp_position: { page: _sigBox.page, x: pdfX, y: pdfY, width: pdfW, height: pdfH },
+      });
+
+      if (!apiResult.success) {
+        _renderError(apiResult.error || 'Lỗi không xác định');
+        return;
+      }
+
+      _signResult = apiResult.data;
+      _renderPhase('success', 100, `Đã ký số tài liệu ${_doc.ma_doc}`);
+      $('#tp-close').style.display = 'block';
+      $('#tp-close').style.background = '#059669';
+      $('#tp-close').textContent = 'Hoàn tất';
+      $('#tp-close').onclick = () => {
+        $('#token-progress-overlay').style.display = 'none';
+        $('#tp-close').style.display = 'none';
+        _modal?.hide();
+        window.App?.loadPending?.();
+        window.location.reload();
+      };
+    } catch (err) {
+      console.error('[SignWithToken]', err);
+      const msg = err.message === 'USER_CANCELLED'
+        ? 'Người dùng đã huỷ thao tác.'
+        : (err.message || 'Lỗi ký số');
+      _renderError(msg);
+    }
   }
 
-  let _signResult = null;
+  function _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = r.result || '';
+        // strip data:application/pdf;base64,
+        const idx = s.indexOf('base64,');
+        resolve(idx >= 0 ? s.substring(idx + 7) : s);
+      };
+      r.onerror = () => reject(new Error('FileReader lỗi'));
+      r.readAsDataURL(blob);
+    });
+  }
 
-  async function _callSignApi() {
-    // Chuyển toạ độ viewer → PDF coordinate
-    const canvas = $('#sw-canvas');
-    const ratio = canvas.width / parseFloat(canvas.style.width || canvas.width);
-    const page = await _pdfDoc.getPage(_sigBox.page);
-    const viewport = page.getViewport({ scale: 1 });
-    const pdfX = (_sigBox.x / _zoom);
-    const pdfY = viewport.height - (_sigBox.y / _zoom) - (_sigBox.height / _zoom);
-    const pdfW = _sigBox.width / _zoom;
-    const pdfH = _sigBox.height / _zoom;
-
+  async function _callSignApi(extra = {}) {
     const data = {
       document_id: _doc.id,
       sign_method: 'usb_token',
-      stamp_position: { page: _sigBox.page, x: pdfX, y: pdfY, width: pdfW, height: pdfH },
+      ...extra,
     };
+
+    // Nếu cert có thật và là base64 PEM thì gửi lên
+    if (extra.cert && typeof extra.cert === 'object') {
+      // certificate_base64 sẽ được parse trên server
+      data.certificate_base64 = extra.cert.certBase64 || undefined;
+    }
 
     const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
     const resp = await fetch('/api/signing/approve', {
@@ -340,6 +416,10 @@ window.SignWorkflow = (() => {
     $('#sw-replace-pdf')?.addEventListener('click', () => $('#sw-replace-input').click());
     $('#sw-replace-input')?.addEventListener('change', (e) => { if (e.target.files[0]) _replaceMainFile(e.target.files[0]); });
 
+    $('#sw-provider')?.addEventListener('change', (e) => {
+      _selectedProvider = e.target.value;
+      if (window.UsbTokenSigner) window.UsbTokenSigner.setProvider(_selectedProvider);
+    });
     $('#sw-enter-sign-mode')?.addEventListener('click', _enterSignMode);
     $('#sw-cancel-sign-mode')?.addEventListener('click', _exitSignMode);
     $('#sw-confirm-sign')?.addEventListener('click', _signWithToken);

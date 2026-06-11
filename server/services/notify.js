@@ -28,6 +28,11 @@ async function sendTelegram(text, opts = {}) {
       body: JSON.stringify(body),
     });
     const data = await resp.json();
+    if (data.ok) {
+      console.log(`[Telegram] ✓ Sent message_id=${data.result?.message_id}`);
+    } else {
+      console.error(`[Telegram] ✗ Error: ${data.description || JSON.stringify(data)}`);
+    }
     return { sent: !!data.ok, response: data };
   } catch (e) {
     console.error('[Telegram] error:', e.message);
