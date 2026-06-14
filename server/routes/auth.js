@@ -9,44 +9,61 @@ const auditLog = require('../services/audit-log');
 const otpService = require('../services/otp');
 
 router.post('/login', async (req, res) => {
-  const { identifier, password } = req.body;
-  if (!identifier || !password) {
-    return res.status(400).json({ success: false, error: 'Vui lòng nhập thông tin đăng nhập và mật khẩu.' });
+  const T0 = Date.now();
+  const dbg = (msg) => console.log(`[login ${Date.now() - T0}ms] ${msg}`);
+  try {
+    dbg('start');
+    const { identifier, password } = req.body || {};
+    if (!identifier || !password) {
+      return res.status(400).json({ success: false, error: 'Vui lòng nhập thông tin đăng nhập và mật khẩu.' });
+    }
+
+    dbg('getDb');
+    const db = getDb();
+    const id = identifier.trim();
+
+    dbg('query user');
+    const user = db.prepare(
+      'SELECT * FROM users WHERE is_active = 1 AND (email = ? COLLATE NOCASE OR ma_nv = ? COLLATE NOCASE OR phone = ? OR ho_ten = ? COLLATE NOCASE)'
+    ).get(id, id, id, id);
+    if (!user) {
+      dbg('no user found');
+      return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+    }
+
+    dbg('verifyPassword');
+    const match = await verifyPassword(password, user.password_hash);
+    if (!match) {
+      dbg('password mismatch');
+      try { auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_FAILED', detail: { reason: 'wrong_password' }, ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
+      return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+    }
+
+    dbg('jwt sign');
+    const accessToken = jwt.sign({ userId: user.id, email: user.email }, config.jwt.secret, { expiresIn: config.jwt.accessTtl });
+    const refreshToken = randomToken(48);
+    const expiresAt = new Date(Date.now() + config.jwt.accessTtl * 1000).toISOString();
+
+    dbg('insert session');
+    db.prepare('INSERT INTO sessions (user_id, token_hash, refresh_hash, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+      user.id, sha256(accessToken), sha256(refreshToken), req.ip, req.get('user-agent') || '', expiresAt
+    );
+
+    try { auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_SUCCESS', ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
+
+    const { password_hash, otp_secret, ...safeUser } = user;
+    dbg('respond ok');
+    res.json({
+      success: true,
+      token: accessToken,
+      refreshToken,
+      user: safeUser,
+      expiresAt,
+    });
+  } catch (err) {
+    console.error('[login FATAL]', err.message, err.stack);
+    res.status(500).json({ success: false, error: 'Lỗi đăng nhập.', debug: { message: err.message } });
   }
-
-  const db = getDb();
-  const id = identifier.trim();
-  const user = db.prepare(
-    'SELECT * FROM users WHERE is_active = 1 AND (email = ? COLLATE NOCASE OR ma_nv = ? COLLATE NOCASE OR phone = ? OR ho_ten = ? COLLATE NOCASE)'
-  ).get(id, id, id, id);
-  if (!user) {
-    return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
-  }
-
-  const match = await verifyPassword(password, user.password_hash);
-  if (!match) {
-    auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_FAILED', detail: { reason: 'wrong_password' }, ip: req.ip, userAgent: req.get('user-agent') });
-    return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
-  }
-
-  const accessToken = jwt.sign({ userId: user.id, email: user.email }, config.jwt.secret, { expiresIn: config.jwt.accessTtl });
-  const refreshToken = randomToken(48);
-  const expiresAt = new Date(Date.now() + config.jwt.accessTtl * 1000).toISOString();
-
-  db.prepare('INSERT INTO sessions (user_id, token_hash, refresh_hash, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-    user.id, sha256(accessToken), sha256(refreshToken), req.ip, req.get('user-agent') || '', expiresAt
-  );
-
-  auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_SUCCESS', ip: req.ip, userAgent: req.get('user-agent') });
-
-  const { password_hash, otp_secret, ...safeUser } = user;
-  res.json({
-    success: true,
-    token: accessToken,
-    refreshToken,
-    user: safeUser,
-    expiresAt,
-  });
 });
 
 router.post('/logout', authenticate, (req, res) => {

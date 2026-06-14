@@ -43,7 +43,10 @@ function getDb() {
     }
 
     // Pragmas — silent fail nếu Turso replica không support
-    try { _db.pragma('journal_mode = WAL'); } catch {}
+    // Trên Vercel /tmp (ephemeral), WAL gây slow/lock → skip
+    if (!process.env.VERCEL) {
+      try { _db.pragma('journal_mode = WAL'); } catch {}
+    }
     try { _db.pragma('foreign_keys = ON'); } catch {}
 
     // libsql có thể trả về _metadata trong row — strip để response sạch
