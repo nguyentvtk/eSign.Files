@@ -7,6 +7,33 @@ const { hashPassword, verifyPassword, sha256, randomToken } = require('../utils/
 const { authenticate } = require('../middleware/auth');
 const auditLog = require('../services/audit-log');
 const otpService = require('../services/otp');
+const sheets = require('../services/google-sheets');
+
+/**
+ * Đồng bộ 1 user từ Google Sheet vào DB (upsert theo Mã NV / Email).
+ * Trả về DB row đầy đủ.
+ */
+async function _upsertUserFromSheet(db, su) {
+  const role = sheets.mapRole(su.phanQuyen);
+  const passwordHash = await hashPassword(su.matKhau || 'esign123');
+  const existing = db.prepare(
+    'SELECT * FROM users WHERE ma_nv = ? COLLATE NOCASE OR email = ? COLLATE NOCASE'
+  ).get(su.maNV, su.email || su.maNV);
+
+  if (existing) {
+    db.prepare(`UPDATE users SET ho_ten=?, email=?, phone=?, chuc_vu=?, phong_ban=?,
+        phan_quyen=?, password_hash=?, avatar_url=?, is_active=1, updated_at=datetime('now') WHERE id=?`)
+      .run(su.hoTen, su.email || existing.email, su.phone, su.chucVu, su.phongBan,
+           role, passwordHash, su.avatar || '', existing.id);
+    return db.prepare('SELECT * FROM users WHERE id=?').get(existing.id);
+  }
+  const r = db.prepare(`INSERT INTO users
+      (ma_nv, ho_ten, email, phone, chuc_vu, phong_ban, phan_quyen, password_hash, avatar_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(su.maNV, su.hoTen, su.email || `${su.maNV}@esign.local`, su.phone,
+         su.chucVu, su.phongBan, role, passwordHash, su.avatar || '');
+  return db.prepare('SELECT * FROM users WHERE id=?').get(r.lastInsertRowid);
+}
 
 router.post('/login', async (req, res) => {
   const T0 = Date.now();
@@ -22,21 +49,46 @@ router.post('/login', async (req, res) => {
     const db = getDb();
     const id = identifier.trim();
 
-    dbg('query user');
-    const user = db.prepare(
-      'SELECT * FROM users WHERE is_active = 1 AND (email = ? COLLATE NOCASE OR ma_nv = ? COLLATE NOCASE OR phone = ? OR ho_ten = ? COLLATE NOCASE)'
-    ).get(id, id, id, id);
-    if (!user) {
-      dbg('no user found');
-      return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+    let user = null;
+
+    // ── (1) Ưu tiên xác thực qua Google Sheet Nguoi_Dung (nguồn chính) ──
+    if (sheets.isConfigured()) {
+      try {
+        dbg('sheet lookup');
+        const su = await sheets.findUser(id);
+        if (su) {
+          if (!sheets.verifyPassword(password, su.matKhau)) {
+            dbg('sheet password mismatch');
+            try { auditLog.log({ userEmail: su.email, action: 'LOGIN_FAILED', detail: { reason: 'wrong_password', source: 'sheet' }, ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
+            return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+          }
+          dbg('sheet match → upsert');
+          user = await _upsertUserFromSheet(db, su);
+        }
+      } catch (e) {
+        console.error('[login sheet]', e.message);
+        // Lỗi đọc sheet → fallback sang DB bên dưới
+      }
     }
 
-    dbg('verifyPassword');
-    const match = await verifyPassword(password, user.password_hash);
-    if (!match) {
-      dbg('password mismatch');
-      try { auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_FAILED', detail: { reason: 'wrong_password' }, ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
-      return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+    // ── (2) Fallback: tra DB (tài khoản admin seed + user tạo trực tiếp) ──
+    if (!user) {
+      dbg('query DB user');
+      const dbUser = db.prepare(
+        'SELECT * FROM users WHERE is_active = 1 AND (email = ? COLLATE NOCASE OR ma_nv = ? COLLATE NOCASE OR phone = ? OR ho_ten = ? COLLATE NOCASE)'
+      ).get(id, id, id, id);
+      if (!dbUser) {
+        dbg('no user found');
+        return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+      }
+      dbg('verifyPassword (DB)');
+      const match = await verifyPassword(password, dbUser.password_hash);
+      if (!match) {
+        dbg('password mismatch');
+        try { auditLog.log({ userId: dbUser.id, userEmail: dbUser.email, action: 'LOGIN_FAILED', detail: { reason: 'wrong_password', source: 'db' }, ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
+        return res.status(401).json({ success: false, error: 'Thông tin đăng nhập hoặc mật khẩu không chính xác.' });
+      }
+      user = dbUser;
     }
 
     dbg('jwt sign');

@@ -5,12 +5,61 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 const { hashPassword } = require('../utils/crypto');
 
+const sheets = require('../services/google-sheets');
+
 const SAFE_COLS = 'id, ma_nv, ho_ten, email, phone, chuc_vu, phong_ban, phan_quyen, otp_enabled, avatar_url, is_active, created_at, updated_at';
 
 router.get('/', authenticate, requireRole('Admin', 'Quản lý'), (req, res) => {
   const db = getDb();
   const users = db.prepare(`SELECT ${SAFE_COLS} FROM users ORDER BY id`).all();
   res.json({ success: true, data: users, meta: { count: users.length } });
+});
+
+// POST /users/sync-sheet — Đồng bộ toàn bộ user từ Google Sheet Nguoi_Dung
+router.post('/sync-sheet', authenticate, requireRole('Admin'), async (req, res) => {
+  if (!sheets.isConfigured()) {
+    return res.status(400).json({ success: false, error: 'Chưa cấu hình GOOGLE_SHEET_ID.' });
+  }
+  try {
+    const db = getDb();
+    const list = await sheets.getNguoiDung(true); // force refresh
+    let created = 0, updated = 0;
+
+    const upsert = db.transaction((users) => {
+      for (const su of users) {
+        if (!su.maNV) continue;
+        const role = sheets.mapRole(su.phanQuyen);
+        const pwHash = require('bcryptjs').hashSync(su.matKhau || 'esign123', 8);
+        const existing = db.prepare('SELECT id FROM users WHERE ma_nv = ? COLLATE NOCASE OR email = ? COLLATE NOCASE')
+          .get(su.maNV, su.email || su.maNV);
+        if (existing) {
+          db.prepare(`UPDATE users SET ho_ten=?, email=?, phone=?, chuc_vu=?, phong_ban=?,
+              phan_quyen=?, password_hash=?, avatar_url=?, is_active=1, updated_at=datetime('now') WHERE id=?`)
+            .run(su.hoTen, su.email || `${su.maNV}@esign.local`, su.phone, su.chucVu, su.phongBan,
+                 role, pwHash, su.avatar || '', existing.id);
+          updated++;
+        } else {
+          db.prepare(`INSERT INTO users (ma_nv, ho_ten, email, phone, chuc_vu, phong_ban, phan_quyen, password_hash, avatar_url)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(su.maNV, su.hoTen, su.email || `${su.maNV}@esign.local`, su.phone,
+                 su.chucVu, su.phongBan, role, pwHash, su.avatar || '');
+          created++;
+        }
+      }
+    });
+    upsert(list);
+
+    try { audit('USER_SYNC_SHEET', 'user'); } catch {}
+    require('../services/audit-log').log({
+      userId: req.user.id, userEmail: req.user.email, action: 'USER_SYNC_SHEET',
+      detail: { total: list.length, created, updated }, ip: req.ip, userAgent: req.get('user-agent'),
+    });
+
+    res.json({ success: true, message: `Đồng bộ thành công: ${created} thêm mới, ${updated} cập nhật.`, data: { total: list.length, created, updated } });
+  } catch (e) {
+    console.error('[sync-sheet]', e);
+    res.status(500).json({ success: false, error: 'Lỗi đồng bộ: ' + e.message });
+  }
 });
 
 router.get('/:id', authenticate, (req, res) => {

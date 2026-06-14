@@ -189,6 +189,16 @@
     $('#userModalTitle').textContent='Thêm người dùng'; $('#user-form').reset(); $('#uf-id').value=''; $('#uf-manv').disabled=false;
     new bootstrap.Modal($('#userModal')).show();
   });
+  $('#btn-sync-sheet')?.addEventListener('click', async () => {
+    const btn=$('#btn-sync-sheet'); const old=btn.innerHTML;
+    btn.disabled=true; btn.innerHTML='<i class="bi bi-arrow-repeat"></i> Đang đồng bộ…';
+    try {
+      const token=localStorage.getItem('esign_token')||sessionStorage.getItem('esign_token');
+      const res=await (await fetch('/api/users/sync-sheet',{method:'POST',headers:{'Authorization':'Bearer '+token}})).json();
+      if(res.success){Toast.success(res.message);loadUsers();}else Toast.error(res.error||'Đồng bộ thất bại.');
+    }catch(e){Toast.error('Lỗi đồng bộ: '+e.message);}
+    finally{btn.disabled=false;btn.innerHTML=old;}
+  });
   $('#btn-save-user')?.addEventListener('click', async () => {
     const id=$('#uf-id').value;
     const data={ma_nv:$('#uf-manv').value.trim(),ho_ten:$('#uf-name').value.trim(),email:$('#uf-email').value.trim(),phone:$('#uf-phone').value.trim(),chuc_vu:$('#uf-chucvu').value.trim(),phong_ban:$('#uf-phongban').value.trim(),phan_quyen:$('#uf-role').value};
