@@ -551,18 +551,25 @@
   // ── New Doc Form: load projects, approvers ──
   async function initNewDocForm() {
     try {
-      const [projRes, userRes] = await Promise.all([
-        _fetchAuth('/api/projects'),
-        _fetchAuth('/api/users'),
+      const [projRes, apprRes] = await Promise.all([
+        _fetchAuth('/api/projects'),       // server tự lọc theo quyền phụ trách
+        _fetchAuth('/api/users/approvers'),
       ]);
       if (projRes.success) {
         _projects = projRes.data;
         const sel = $('#nd-project');
-        if (sel) sel.innerHTML = '<option value="">— Chọn dự án —</option>' +
-          _projects.filter(p => p.trang_thai !== 'Đã quyết toán').map(p => `<option value="${p.id}">${esc(p.ma_du_an)} — ${esc(p.ten_du_an)}</option>`).join('');
+        const usable = _projects.filter(p => p.trang_thai !== 'Đã quyết toán');
+        if (sel) {
+          if (!usable.length) {
+            sel.innerHTML = '<option value="">— Bạn chưa được phân công dự án nào —</option>';
+          } else {
+            sel.innerHTML = '<option value="">— Chọn dự án —</option>' +
+              usable.map(p => `<option value="${p.id}">${esc(p.ma_du_an)} — ${esc(p.ten_du_an)}</option>`).join('');
+          }
+        }
       }
-      if (userRes.success) {
-        _approvers = userRes.data.filter(u => ['Admin','Quản lý'].includes(u.phan_quyen));
+      if (apprRes.success) {
+        _approvers = apprRes.data;
         const sel = $('#nd-approver');
         if (sel) sel.innerHTML = '<option value="">— Chọn người duyệt —</option>' +
           _approvers.map(u => `<option value="${u.id}">${esc(u.ho_ten)} — ${esc(u.chuc_vu||u.phan_quyen)} (${esc(u.phong_ban||'')})</option>`).join('');
@@ -630,50 +637,205 @@
   }
 
   // ── Projects Page ──
+  let _projModal = null;
+  const _money = (n) => n ? Number(n).toLocaleString('vi-VN') + ' đ' : '—';
+
   async function loadProjects() {
     try {
       const r = await _fetchAuth('/api/projects');
       if (!r.success) { Toast.error(r.error); return; }
       const tbody = $('#projects-body');
-      if (!r.data.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Chưa có dự án</td></tr>'; return; }
+      if (!r.data.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Chưa có dự án</td></tr>'; return; }
       tbody.innerHTML = r.data.map(p => `<tr>
-        <td><strong style="color:var(--brand-primary)">${esc(p.ma_du_an)}</strong></td>
+        <td><strong style="color:var(--brand-primary)">${esc(p.ma_du_an)}</strong>${p.nam_thuc_hien?`<div style="font-size:11px;color:var(--text-muted)">Năm ${esc(p.nam_thuc_hien)}</div>`:''}</td>
         <td><div style="font-weight:500">${esc(p.ten_du_an)}</div>${p.chu_dau_tu?`<div style="font-size:11.5px;color:var(--text-muted)">${esc(p.chu_dau_tu)}</div>`:''}</td>
-        <td>${esc(p.chu_dau_tu||'—')}</td>
-        <td style="font-size:13px">${p.tong_muc_dau_tu?Number(p.tong_muc_dau_tu).toLocaleString('vi-VN')+' đ':'—'}</td>
+        <td style="font-size:12.5px">${esc(p.nv_ky_thuat||'—')}${p.nv_ky_thuat_id?' <i class="bi bi-check-circle-fill text-success" title="Đã liên kết tài khoản"></i>':''}</td>
+        <td style="font-size:12.5px">${esc(p.nv_ke_toan||'—')}${p.nv_ke_toan_id?' <i class="bi bi-check-circle-fill text-success"></i>':''}</td>
+        <td style="font-size:13px">${_money(p.tong_muc_dau_tu)}</td>
         <td><span class="badge-status signed">${p.so_da_ky}/${p.so_van_ban}</span></td>
         <td>${statusBadge(p.trang_thai)}</td>
-        <td>
+        <td style="white-space:nowrap">
+          <button class="tbl-action" title="Sửa" onclick="App.editProject(${p.id})"><i class="bi bi-pencil"></i></button>
           <button class="tbl-action" title="Xem danh mục" onclick="App.viewProjectDocs(${p.id})"><i class="bi bi-list-ul"></i></button>
           <button class="tbl-action" title="Xuất HS" onclick="App.exportProject(${p.id})"><i class="bi bi-download"></i></button>
+          <button class="tbl-action" title="Xoá" onclick="App.deleteProject(${p.id},'${esc(p.ma_du_an)}')"><i class="bi bi-trash"></i></button>
         </td>
       </tr>`).join('');
     } catch(e) { Toast.error('Lỗi tải dự án.'); }
   }
 
+  // ── Tab switching ──
+  function _switchProjTab(tab) {
+    $('#proj-tab-import').style.display = tab === 'import' ? 'block' : 'none';
+    $('#proj-tab-manual').style.display = tab === 'manual' ? 'block' : 'none';
+    $('#tab-import-btn').classList.toggle('active', tab === 'import');
+    $('#tab-manual-btn').classList.toggle('active', tab === 'manual');
+    // Nút Lưu chỉ hiện ở tab thủ công
+    $('#btn-save-project').style.display = tab === 'manual' ? 'inline-block' : 'none';
+  }
+  $('#tab-import-btn')?.addEventListener('click', () => _switchProjTab('import'));
+  $('#tab-manual-btn')?.addEventListener('click', () => _switchProjTab('manual'));
+
   $('#btn-add-project')?.addEventListener('click', () => {
-    $('#project-form').reset();
-    new bootstrap.Modal($('#projectModal')).show();
+    $('#projectModalTitle').textContent = 'Thêm dự án';
+    $('#project-form').reset(); $('#pf-id').value = '';
+    $('#pf-ma').disabled = false;
+    $('#imp-mapping').style.display = 'none';
+    $('#imp-preview').innerHTML = ''; $('#imp-count').textContent = '';
+    // Prefill URL sheet dự án mặc định
+    if (!$('#imp-url').value) $('#imp-url').value = 'https://docs.google.com/spreadsheets/d/1LsaccoqTu3sRaElEWVdCZjXlzRL_2N2DPPP3UiInDEk/edit?gid=0';
+    _switchProjTab('import');
+    _projModal = new bootstrap.Modal($('#projectModal')); _projModal.show();
   });
 
+  // ── Import từ Sheet: tải cột ──
+  const MAP_FIELDS = [
+    { key:'ma_du_an', label:'Mã dự án', req:true },
+    { key:'ten_du_an', label:'Tên dự án', req:true },
+    { key:'chu_dau_tu', label:'Chủ đầu tư' },
+    { key:'nam_thuc_hien', label:'Năm thực hiện' },
+    { key:'loai_du_an', label:'Loại dự án' },
+    { key:'nv_ky_thuat', label:'Phụ trách kỹ thuật ⚑' },
+    { key:'nv_ke_toan', label:'Phụ trách kế toán ⚑' },
+    { key:'tong_muc_dau_tu', label:'Tổng mức đầu tư' },
+    { key:'tong_gt_quyet_toan', label:'Tổng GT quyết toán' },
+    { key:'so_giai_ngan', label:'Số giải ngân' },
+    { key:'ngay_bat_dau', label:'Ngày bắt đầu' },
+    { key:'ngay_ket_thuc', label:'Ngày kết thúc' },
+    { key:'mo_ta', label:'Mô tả' },
+    { key:'trang_thai', label:'Trạng thái' },
+  ];
+  let _impHeaders = [], _impSuggested = {};
+
+  $('#btn-load-cols')?.addEventListener('click', async () => {
+    const url = $('#imp-url').value.trim();
+    const sheetName = $('#imp-sheet').value.trim();
+    if (!url) { Toast.warning('Nhập URL Google Sheet.'); return; }
+    const btn = $('#btn-load-cols'); const old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+    try {
+      const r = await _fetchAuth('/api/projects/sheet-preview', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ url, sheetName })
+      });
+      if (!r.success) { Toast.error(r.error); return; }
+      _impHeaders = r.data.headers; _impSuggested = r.data.mapping;
+      $('#imp-count').textContent = `${r.data.total} dòng dữ liệu`;
+      _renderMappingFields();
+      $('#imp-mapping').style.display = 'block';
+      Toast.success(`Đã tải ${_impHeaders.length} cột. Kiểm tra ánh xạ rồi Import.`);
+    } catch(e) { Toast.error('Lỗi tải cột: ' + e.message); }
+    finally { btn.disabled = false; btn.innerHTML = old; }
+  });
+
+  function _renderMappingFields() {
+    const opts = (sel) => '<option value="">— Không dùng —</option>' +
+      _impHeaders.map(h => `<option value="${esc(h)}" ${h===sel?'selected':''}>${esc(h)}</option>`).join('');
+    $('#imp-mapping-fields').innerHTML = MAP_FIELDS.map(f => `
+      <div class="col-md-6">
+        <label class="form-label" style="font-size:12.5px;margin-bottom:2px">${f.label}${f.req?' <span style="color:#DC2626">*</span>':''}</label>
+        <select class="form-select form-select-sm imp-map" data-key="${f.key}">${opts(_impSuggested[f.key]||'')}</select>
+      </div>`).join('');
+  }
+
+  function _collectMapping() {
+    const m = {};
+    document.querySelectorAll('.imp-map').forEach(s => { if (s.value) m[s.dataset.key] = s.value; });
+    return m;
+  }
+
+  $('#btn-preview-import')?.addEventListener('click', async () => {
+    const url = $('#imp-url').value.trim(), sheetName = $('#imp-sheet').value.trim();
+    const m = _collectMapping();
+    if (!m.ma_du_an || !m.ten_du_an) { Toast.warning('Phải chọn cột Mã DA & Tên dự án.'); return; }
+    const r = await _fetchAuth('/api/projects/sheet-preview', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url, sheetName })
+    });
+    if (!r.success) { Toast.error(r.error); return; }
+    const rows = r.data.sample;
+    const cols = ['ma_du_an','ten_du_an','nv_ky_thuat','nv_ke_toan','tong_muc_dau_tu'];
+    const labels = {ma_du_an:'Mã DA',ten_du_an:'Tên DA',nv_ky_thuat:'PT Kỹ thuật',nv_ke_toan:'PT Kế toán',tong_muc_dau_tu:'TMĐT'};
+    $('#imp-preview').innerHTML = `<table class="doc-table" style="font-size:12px"><thead><tr>${cols.map(c=>`<th>${labels[c]}</th>`).join('')}</tr></thead><tbody>${
+      rows.map(row => `<tr>${cols.map(c => `<td>${esc(row[m[c]]||'')}</td>`).join('')}</tr>`).join('')
+    }</tbody></table><div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">Hiển thị ${rows.length} dòng đầu.</div>`;
+  });
+
+  $('#btn-do-import')?.addEventListener('click', async () => {
+    const url = $('#imp-url').value.trim(), sheetName = $('#imp-sheet').value.trim();
+    const mapping = _collectMapping();
+    if (!mapping.ma_du_an || !mapping.ten_du_an) { Toast.warning('Phải chọn cột Mã DA & Tên dự án.'); return; }
+    const btn = $('#btn-do-import'); const old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Đang import…';
+    try {
+      const r = await _fetchAuth('/api/projects/import-sheet', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url, sheetName, mapping })
+      });
+      if (r.success) {
+        Toast.success(r.message);
+        _projModal?.hide();
+        loadProjects();
+      } else Toast.error(r.error);
+    } catch(e) { Toast.error('Lỗi import: ' + e.message); }
+    finally { btn.disabled = false; btn.innerHTML = old; }
+  });
+
+  // ── Lưu thủ công (thêm/sửa) ──
   $('#btn-save-project')?.addEventListener('click', async () => {
+    const id = $('#pf-id').value;
     const data = {
       ma_du_an: $('#pf-ma').value.trim(),
       ten_du_an: $('#pf-ten').value.trim(),
       chu_dau_tu: $('#pf-cdt').value.trim(),
+      nam_thuc_hien: $('#pf-nam').value.trim(),
+      loai_du_an: $('#pf-loai').value.trim(),
+      nv_ky_thuat: $('#pf-kt').value.trim(),
+      nv_ke_toan: $('#pf-ketoan').value.trim(),
       tong_muc_dau_tu: parseFloat($('#pf-tmdt').value) || 0,
       ngay_bat_dau: $('#pf-start').value || null,
       ngay_ket_thuc: $('#pf-end').value || null,
+      trang_thai: $('#pf-status').value,
       mo_ta: $('#pf-desc').value.trim(),
     };
     if (!data.ma_du_an || !data.ten_du_an) { Toast.warning('Vui lòng nhập Mã & Tên dự án.'); return; }
-    const r = await _fetchAuth('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const r = id
+      ? await _fetchAuth(`/api/projects/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) })
+      : await _fetchAuth('/api/projects', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     if (r.success) {
-      Toast.success(`Đã tạo dự án ${data.ma_du_an}`);
-      bootstrap.Modal.getInstance($('#projectModal')).hide();
+      Toast.success(id ? 'Đã cập nhật dự án.' : `Đã tạo dự án ${data.ma_du_an}`);
+      _projModal?.hide();
       loadProjects();
     } else Toast.error(r.error);
   });
+
+  App.editProject = async (id) => {
+    const r = await _fetchAuth(`/api/projects/${id}`);
+    if (!r.success) { Toast.error(r.error); return; }
+    const p = r.data;
+    $('#projectModalTitle').textContent = 'Sửa dự án';
+    $('#pf-id').value = p.id;
+    $('#pf-ma').value = p.ma_du_an; $('#pf-ma').disabled = true;
+    $('#pf-ten').value = p.ten_du_an || '';
+    $('#pf-cdt').value = p.chu_dau_tu || '';
+    $('#pf-nam').value = p.nam_thuc_hien || '';
+    $('#pf-loai').value = p.loai_du_an || '';
+    $('#pf-kt').value = p.nv_ky_thuat || '';
+    $('#pf-ketoan').value = p.nv_ke_toan || '';
+    $('#pf-tmdt').value = p.tong_muc_dau_tu || '';
+    $('#pf-start').value = (p.ngay_bat_dau||'').slice(0,10);
+    $('#pf-end').value = (p.ngay_ket_thuc||'').slice(0,10);
+    $('#pf-status').value = p.trang_thai || 'Đang thực hiện';
+    $('#pf-desc').value = p.mo_ta || '';
+    _projModal = new bootstrap.Modal($('#projectModal'));
+    _switchProjTab('manual');
+    _projModal.show();
+  };
+
+  App.deleteProject = async (id, ma) => {
+    if (!confirm(`Xoá dự án "${ma}"? (chỉ xoá được khi chưa có tài liệu)`)) return;
+    const r = await _fetchAuth(`/api/projects/${id}`, { method:'DELETE' });
+    if (r.success) { Toast.success('Đã xoá dự án.'); loadProjects(); }
+    else Toast.error(r.error);
+  };
 
   App.viewProjectDocs = (id) => {
     navigateTo('register');

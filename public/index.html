@@ -386,8 +386,8 @@
       </div>
       <div class="data-card">
         <div style="overflow-x:auto">
-          <table class="doc-table"><thead><tr><th>Mã DA</th><th>Tên dự án</th><th>Chủ đầu tư</th><th>Tổng MĐT</th><th>VB / Đã ký</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-          <tbody id="projects-body"><tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
+          <table class="doc-table"><thead><tr><th>Mã DA</th><th>Tên dự án</th><th>Phụ trách KT</th><th>Phụ trách KToán</th><th>Tổng MĐT</th><th>VB / Đã ký</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+          <tbody id="projects-body"><tr><td colspan="8" class="text-center text-muted py-4">Đang tải...</td></tr></tbody></table>
         </div>
       </div>
     </div>
@@ -411,26 +411,75 @@
 
     <!-- Project Modal -->
     <div class="modal fade" id="projectModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">Thêm dự án</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header"><h5 class="modal-title" id="projectModalTitle">Thêm dự án</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <form id="project-form">
-          <div class="row g-3">
-            <div class="col-md-4"><label class="form-label">Mã dự án *</label><input class="form-control" id="pf-ma" required></div>
-            <div class="col-md-8"><label class="form-label">Tên dự án *</label><input class="form-control" id="pf-ten" required></div>
-            <div class="col-md-8"><label class="form-label">Chủ đầu tư</label><input class="form-control" id="pf-cdt"></div>
-            <div class="col-md-4"><label class="form-label">Tổng mức đầu tư (VND)</label><input type="number" class="form-control" id="pf-tmdt"></div>
-            <div class="col-md-6"><label class="form-label">Ngày bắt đầu</label><input type="date" class="form-control" id="pf-start"></div>
-            <div class="col-md-6"><label class="form-label">Ngày kết thúc dự kiến</label><input type="date" class="form-control" id="pf-end"></div>
-            <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" id="pf-desc" rows="2"></textarea></div>
+        <!-- Tabs -->
+        <ul class="nav nav-pills mb-3" id="proj-tabs" role="tablist">
+          <li class="nav-item"><button class="nav-link active" id="tab-import-btn" data-tab="import" type="button"><i class="bi bi-cloud-download"></i> Import từ Google Sheet</button></li>
+          <li class="nav-item"><button class="nav-link" id="tab-manual-btn" data-tab="manual" type="button"><i class="bi bi-pencil-square"></i> Nhập thủ công</button></li>
+        </ul>
+
+        <!-- TAB: Import từ Sheet -->
+        <div id="proj-tab-import">
+          <div class="row g-2 align-items-end mb-3">
+            <div class="col-md-8">
+              <label class="form-label">URL / ID Google Sheet chứa danh mục dự án</label>
+              <input class="form-control" id="imp-url" placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Tên sheet (tuỳ chọn)</label>
+              <input class="form-control" id="imp-sheet" placeholder="Để trống = sheet đầu">
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-outline-primary w-100" id="btn-load-cols"><i class="bi bi-arrow-down-circle"></i> Tải cột</button>
+            </div>
           </div>
-          <div style="margin-top:10px;padding:10px;background:var(--surface-bg);border-radius:8px;font-size:12px;color:var(--text-secondary)">
-            <i class="bi bi-info-circle"></i> Hệ thống sẽ tự tạo các giai đoạn mặc định: Chuẩn bị đầu tư, Thực hiện đầu tư, Đấu thầu, Thi công, Nghiệm thu, Quyết toán.
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
+            <i class="bi bi-info-circle"></i> Sheet phải để chế độ chia sẻ <b>"Anyone with the link → Viewer"</b>.
           </div>
-        </form>
+
+          <!-- Mapping (ẩn đến khi tải cột) -->
+          <div id="imp-mapping" style="display:none">
+            <div style="font-weight:600;margin-bottom:8px;font-size:14px"><i class="bi bi-diagram-3"></i> Khai báo cột dữ liệu</div>
+            <div class="row g-2" id="imp-mapping-fields"></div>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-outline-secondary" id="btn-preview-import"><i class="bi bi-eye"></i> Xem trước</button>
+              <button class="btn btn-primary" id="btn-do-import"><i class="bi bi-cloud-upload"></i> Import vào hệ thống</button>
+              <span id="imp-count" style="align-self:center;font-size:13px;color:var(--text-muted)"></span>
+            </div>
+            <div id="imp-preview" style="margin-top:14px;max-height:280px;overflow:auto"></div>
+          </div>
+        </div>
+
+        <!-- TAB: Nhập thủ công -->
+        <div id="proj-tab-manual" style="display:none">
+          <form id="project-form">
+            <input type="hidden" id="pf-id">
+            <div class="row g-3">
+              <div class="col-md-4"><label class="form-label">Mã dự án *</label><input class="form-control" id="pf-ma" required></div>
+              <div class="col-md-8"><label class="form-label">Tên dự án *</label><input class="form-control" id="pf-ten" required></div>
+              <div class="col-md-6"><label class="form-label">Chủ đầu tư</label><input class="form-control" id="pf-cdt"></div>
+              <div class="col-md-3"><label class="form-label">Năm thực hiện</label><input class="form-control" id="pf-nam"></div>
+              <div class="col-md-3"><label class="form-label">Loại dự án</label><input class="form-control" id="pf-loai"></div>
+              <div class="col-md-6"><label class="form-label">Phụ trách kỹ thuật</label><input class="form-control" id="pf-kt" placeholder="Họ tên NV (quyền trình VB)"></div>
+              <div class="col-md-6"><label class="form-label">Phụ trách kế toán</label><input class="form-control" id="pf-ketoan" placeholder="Họ tên NV (quyền trình VB)"></div>
+              <div class="col-md-4"><label class="form-label">Tổng mức đầu tư (đ)</label><input type="number" class="form-control" id="pf-tmdt"></div>
+              <div class="col-md-4"><label class="form-label">Ngày bắt đầu</label><input type="date" class="form-control" id="pf-start"></div>
+              <div class="col-md-4"><label class="form-label">Ngày kết thúc</label><input type="date" class="form-control" id="pf-end"></div>
+              <div class="col-md-6"><label class="form-label">Trạng thái</label>
+                <select class="form-select" id="pf-status"><option>Đang thực hiện</option><option>Tạm dừng</option><option>Hoàn thành</option><option>Đã quyết toán</option></select>
+              </div>
+              <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" id="pf-desc" rows="2"></textarea></div>
+            </div>
+            <div style="margin-top:10px;padding:10px;background:var(--surface-bg);border-radius:8px;font-size:12px;color:var(--text-secondary)">
+              <i class="bi bi-info-circle"></i> NV phụ trách kỹ thuật/kế toán được cấp <b>quyền trình văn bản</b> cho dự án. Hệ thống tự tạo 6 giai đoạn mặc định cho dự án mới.
+            </div>
+          </form>
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
-        <button class="btn btn-primary" id="btn-save-project">Lưu</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+        <button class="btn btn-primary" id="btn-save-project" style="display:none">Lưu dự án</button>
       </div>
     </div></div></div>
 

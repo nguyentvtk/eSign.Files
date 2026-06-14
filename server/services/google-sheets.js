@@ -123,4 +123,56 @@ function invalidateCache() {
   _cache = { data: null, at: 0 };
 }
 
-module.exports = { isConfigured, getNguoiDung, findUser, mapRole, verifyPassword, invalidateCache, SHEET_ID };
+/* ── Đọc sheet BẤT KỲ (cho import dự án) ── */
+
+// Tách spreadsheet ID + gid từ URL người dùng dán
+function parseSheetRef(input) {
+  const s = String(input || '').trim();
+  let id = '';
+  const m = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) id = m[1];
+  else if (/^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
+  let gid = '';
+  const g = s.match(/[?&#]gid=([0-9]+)/);
+  if (g) gid = g[1];
+  return { id, gid };
+}
+
+/**
+ * Tải 1 sheet bất kỳ → trả { headers: [...], rows: [[...]] }
+ * @param {string} sheetId
+ * @param {Object} opts - { gid, sheetName }
+ */
+async function fetchAnySheet(sheetId, opts = {}) {
+  if (!sheetId) throw new Error('Thiếu Sheet ID.');
+  let q = 'tqx=out:csv';
+  if (opts.gid) q += `&gid=${encodeURIComponent(opts.gid)}`;
+  else if (opts.sheetName) q += `&sheet=${encodeURIComponent(opts.sheetName)}`;
+  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?${q}`;
+  const resp = await fetch(url, { redirect: 'follow' });
+  if (!resp.ok) throw new Error(`Không đọc được Google Sheet (HTTP ${resp.status}). Kiểm tra quyền chia sẻ "Anyone with link".`);
+  const text = await resp.text();
+  const all = _parseCsv(text);
+  if (!all.length) return { headers: [], rows: [] };
+  const headers = all[0].map(h => (h || '').trim());
+  const rows = all.slice(1).filter(r => r.some(c => (c || '').trim() !== ''));
+  return { headers, rows };
+}
+
+// Parse tiền VND "920.000.000" hoặc "1,234.56" → number
+function parseMoney(v) {
+  if (v == null) return 0;
+  let s = String(v).trim();
+  if (!s) return 0;
+  // Bỏ ký tự không phải số/dấu phân cách
+  s = s.replace(/[^\d.,]/g, '');
+  // VN: dấu chấm là phân cách nghìn → bỏ hết dấu chấm và phẩy
+  s = s.replace(/[.,]/g, '');
+  const n = parseInt(s, 10);
+  return isNaN(n) ? 0 : n;
+}
+
+module.exports = {
+  isConfigured, getNguoiDung, findUser, mapRole, verifyPassword, invalidateCache, SHEET_ID,
+  parseSheetRef, fetchAnySheet, parseMoney,
+};

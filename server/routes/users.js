@@ -62,6 +62,15 @@ router.post('/sync-sheet', authenticate, requireRole('Admin'), async (req, res) 
   }
 });
 
+// GET /users/approvers — danh sách người duyệt (Admin/Quản lý), cho mọi user đã đăng nhập
+router.get('/approvers', authenticate, (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT id, ho_ten, chuc_vu, phong_ban, phan_quyen FROM users WHERE is_active = 1 AND phan_quyen IN ('Admin','Quản lý') ORDER BY ho_ten`
+  ).all();
+  res.json({ success: true, data: rows });
+});
+
 router.get('/:id', authenticate, (req, res) => {
   const db = getDb();
   const user = db.prepare(`SELECT ${SAFE_COLS} FROM users WHERE id = ?`).get(req.params.id);

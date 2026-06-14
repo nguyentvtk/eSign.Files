@@ -62,6 +62,7 @@ function getDb() {
         console.error('[DB schema]', e.message);
         // Schema có thể đã apply rồi (idempotent CREATE TABLE IF NOT EXISTS) — không throw
       }
+      _migrate(_db);
     }
 
     return _db;
@@ -75,6 +76,31 @@ function close() {
   if (_db && _db.close) try { _db.close(); } catch {}
   _db = null;
   _schemaApplied = false;
+}
+
+/**
+ * Migration nhẹ — thêm cột mới vào bảng có sẵn (SQLite không có ADD COLUMN IF NOT EXISTS).
+ */
+function _migrate(db) {
+  try {
+    const cols = db.prepare("PRAGMA table_info(projects)").all().map(c => c.name);
+    const add = (name, def) => {
+      if (!cols.includes(name)) {
+        try { db.exec(`ALTER TABLE projects ADD COLUMN ${name} ${def}`); } catch (e) { console.error('[migrate]', name, e.message); }
+      }
+    };
+    add('nam_thuc_hien', 'TEXT');
+    add('nv_ky_thuat', 'TEXT');           // tên NV phụ trách kỹ thuật (từ sheet)
+    add('nv_ky_thuat_id', 'INTEGER');     // resolve → users.id
+    add('nv_ke_toan', 'TEXT');            // tên NV phụ trách kế toán
+    add('nv_ke_toan_id', 'INTEGER');
+    add('loai_du_an', 'TEXT');
+    add('tong_gt_quyet_toan', 'REAL');
+    add('so_giai_ngan', 'REAL');
+    add('sheet_source', 'TEXT');          // JSON config nguồn sheet (để re-sync)
+  } catch (e) {
+    console.error('[migrate] failed:', e.message);
+  }
 }
 
 /**
