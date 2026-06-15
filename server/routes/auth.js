@@ -8,32 +8,9 @@ const { authenticate } = require('../middleware/auth');
 const auditLog = require('../services/audit-log');
 const otpService = require('../services/otp');
 const sheets = require('../services/google-sheets');
-
-/**
- * Đồng bộ 1 user từ Google Sheet vào DB (upsert theo Mã NV / Email).
- * Trả về DB row đầy đủ.
- */
-async function _upsertUserFromSheet(db, su) {
-  const role = sheets.mapRole(su.phanQuyen);
-  const passwordHash = await hashPassword(su.matKhau || 'esign123');
-  const existing = db.prepare(
-    'SELECT * FROM users WHERE ma_nv = ? COLLATE NOCASE OR email = ? COLLATE NOCASE'
-  ).get(su.maNV, su.email || su.maNV);
-
-  if (existing) {
-    db.prepare(`UPDATE users SET ho_ten=?, email=?, phone=?, chuc_vu=?, phong_ban=?,
-        phan_quyen=?, password_hash=?, avatar_url=?, is_active=1, updated_at=datetime('now') WHERE id=?`)
-      .run(su.hoTen, su.email || existing.email, su.phone, su.chucVu, su.phongBan,
-           role, passwordHash, su.avatar || '', existing.id);
-    return db.prepare('SELECT * FROM users WHERE id=?').get(existing.id);
-  }
-  const r = db.prepare(`INSERT INTO users
-      (ma_nv, ho_ten, email, phone, chuc_vu, phong_ban, phan_quyen, password_hash, avatar_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(su.maNV, su.hoTen, su.email || `${su.maNV}@esign.local`, su.phone,
-         su.chucVu, su.phongBan, role, passwordHash, su.avatar || '');
-  return db.prepare('SELECT * FROM users WHERE id=?').get(r.lastInsertRowid);
-}
+const { upsertFromSheet } = require('../services/user-sync');
+// Alias giữ tương thích tên gọi cũ trong route login
+const _upsertUserFromSheet = (db, su) => upsertFromSheet(db, su);
 
 router.post('/login', async (req, res) => {
   const T0 = Date.now();
@@ -92,14 +69,20 @@ router.post('/login', async (req, res) => {
     }
 
     dbg('jwt sign');
-    const accessToken = jwt.sign({ userId: user.id, email: user.email }, config.jwt.secret, { expiresIn: config.jwt.accessTtl });
+    // JWT chứa email + maNV (định danh ổn định across serverless instances)
+    const accessToken = jwt.sign(
+      { userId: user.id, email: user.email, maNV: user.ma_nv },
+      config.jwt.secret, { expiresIn: config.jwt.accessTtl }
+    );
     const refreshToken = randomToken(48);
     const expiresAt = new Date(Date.now() + config.jwt.accessTtl * 1000).toISOString();
 
-    dbg('insert session');
-    db.prepare('INSERT INTO sessions (user_id, token_hash, refresh_hash, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-      user.id, sha256(accessToken), sha256(refreshToken), req.ip, req.get('user-agent') || '', expiresAt
-    );
+    // Lưu session best-effort (không bắt buộc cho auth — chỉ phục vụ audit/revoke khi có Turso)
+    try {
+      db.prepare('INSERT INTO sessions (user_id, token_hash, refresh_hash, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        user.id, sha256(accessToken), sha256(refreshToken), req.ip, req.get('user-agent') || '', expiresAt
+      );
+    } catch (e) { /* ephemeral DB — bỏ qua */ }
 
     try { auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_SUCCESS', ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
 
@@ -119,9 +102,11 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', authenticate, (req, res) => {
-  const db = getDb();
-  db.prepare('DELETE FROM sessions WHERE id = ?').run(req.sessionId);
-  auditLog.log({ userId: req.user.id, userEmail: req.user.email, action: 'LOGOUT', ip: req.ip, userAgent: req.get('user-agent') });
+  try {
+    const db = getDb();
+    if (req.sessionId) db.prepare('DELETE FROM sessions WHERE id = ?').run(req.sessionId);
+  } catch {}
+  try { auditLog.log({ userId: req.user.id, userEmail: req.user.email, action: 'LOGOUT', ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
   res.json({ success: true, message: 'Đã đăng xuất.' });
 });
 

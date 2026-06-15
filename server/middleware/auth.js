@@ -3,33 +3,45 @@ const config = require('../config');
 const { getDb } = require('../db/database');
 const { sha256 } = require('../utils/crypto');
 
-function authenticate(req, res, next) {
+// Stateless JWT auth — KHÔNG phụ thuộc bảng sessions (để hoạt động ổn định trên
+// serverless ephemeral, nơi mỗi instance có DB /tmp riêng). Load user theo EMAIL
+// (định danh ổn định) thay vì userId (autoincrement, khác nhau giữa instance).
+// Nếu user chưa có trong DB instance hiện tại → tái đồng bộ từ Google Sheet.
+async function authenticate(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, error: 'Token không được cung cấp.' });
   }
 
   const token = header.slice(7);
+  let payload;
   try {
-    const payload = jwt.verify(token, config.jwt.secret);
+    payload = jwt.verify(token, config.jwt.secret);
+  } catch (err) {
+    return res.status(401).json({
+      success: false,
+      error: err.name === 'TokenExpiredError' ? 'Token đã hết hạn. Vui lòng đăng nhập lại.' : 'Token không hợp lệ.',
+    });
+  }
+
+  try {
     const db = getDb();
-    const now = new Date().toISOString();
-    const session = db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?').get(sha256(token), now);
-    if (!session) {
-      return res.status(401).json({ success: false, error: 'Phiên đăng nhập đã hết hạn.' });
-    }
-    const user = db.prepare('SELECT id, ma_nv, ho_ten, email, phone, chuc_vu, phong_ban, phan_quyen, otp_enabled, avatar_url FROM users WHERE id = ? AND is_active = 1').get(payload.userId);
+    const { ensureUser } = require('../services/user-sync');
+    const user = await ensureUser(db, { email: payload.email, maNV: payload.maNV });
     if (!user) {
       return res.status(401).json({ success: false, error: 'Tài khoản không tồn tại hoặc đã bị vô hiệu hóa.' });
     }
-    req.user = user;
-    req.sessionId = session.id;
+    // Chuẩn hoá object (loại field nhạy cảm)
+    req.user = {
+      id: user.id, ma_nv: user.ma_nv, ho_ten: user.ho_ten, email: user.email,
+      phone: user.phone, chuc_vu: user.chuc_vu, phong_ban: user.phong_ban,
+      phan_quyen: user.phan_quyen, otp_enabled: user.otp_enabled, avatar_url: user.avatar_url,
+    };
+    req.sessionId = null;
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ success: false, error: 'Token đã hết hạn.' });
-    }
-    return res.status(401).json({ success: false, error: 'Token không hợp lệ.' });
+    console.error('[authenticate]', err.message);
+    return res.status(500).json({ success: false, error: 'Lỗi xác thực: ' + err.message });
   }
 }
 
