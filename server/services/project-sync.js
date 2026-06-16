@@ -1,4 +1,5 @@
 const sheets = require('./google-sheets');
+const { syncAllUsersIfEmpty } = require('./user-sync');
 
 const PROJECT_SHEET_URL = process.env.PROJECT_SHEET_URL || '';
 const PROJECT_SHEET_NAME = process.env.PROJECT_SHEET_NAME || '';
@@ -25,6 +26,8 @@ async function syncIfEmpty(db) {
 
   console.log('[project-sync] DB trống — bắt đầu resync dự án từ Google Sheet...');
   try {
+    // Sync users trước để resolveUserId hoạt động chính xác
+    await syncAllUsersIfEmpty(db);
     await _importFromSheet(db);
     _lastSyncAt = Date.now();
   } catch (e) {

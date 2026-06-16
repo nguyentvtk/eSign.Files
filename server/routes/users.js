@@ -63,8 +63,11 @@ router.post('/sync-sheet', authenticate, requireRole('Admin'), async (req, res) 
 });
 
 // GET /users/approvers — danh sách người duyệt (Admin/Quản lý), cho mọi user đã đăng nhập
-router.get('/approvers', authenticate, (req, res) => {
+router.get('/approvers', authenticate, async (req, res) => {
   const db = getDb();
+  // Sync tất cả users từ Google Sheet nếu DB ephemeral thiếu dữ liệu
+  const { syncAllUsersIfEmpty } = require('../services/user-sync');
+  await syncAllUsersIfEmpty(db);
   const rows = db.prepare(
     `SELECT id, ho_ten, chuc_vu, phong_ban, phan_quyen FROM users WHERE is_active = 1 AND phan_quyen IN ('Admin','Quản lý') ORDER BY ho_ten`
   ).all();

@@ -87,8 +87,16 @@ router.post('/login', async (req, res) => {
 
     try { auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_SUCCESS', ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
 
-    // Auto-resync dự án từ Google Sheet nếu DB ephemeral (Vercel) bị mất data
-    // Await để đảm bảo dữ liệu dự án sẵn sàng khi client load trang
+    // Auto-resync users + dự án từ Google Sheet nếu DB ephemeral (Vercel) bị mất data
+    // Await để đảm bảo dữ liệu sẵn sàng khi client load trang
+    try {
+      dbg('user-sync-all start');
+      const { syncAllUsersIfEmpty } = require('../services/user-sync');
+      await syncAllUsersIfEmpty(db);
+      dbg('user-sync-all done');
+    } catch (e) {
+      console.error('[login user-sync-all]', e.message);
+    }
     try {
       dbg('project-sync start');
       await projectSync.syncIfEmpty(db);

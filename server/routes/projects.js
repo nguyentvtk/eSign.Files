@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticate, requirePermission } = require('../middleware/auth');
 const sheets = require('../services/google-sheets');
+const projectSync = require('../services/project-sync');
 
 const DEFAULT_PHASES = [
   'Chuẩn bị đầu tư',
@@ -54,8 +55,12 @@ function resolveUserId(db, name) {
   return u ? u.id : null;
 }
 
-router.get('/', authenticate, (req, res) => {
+router.get('/', authenticate, async (req, res) => {
   const db = getDb();
+  // Sync users trước để resolveUserId chính xác khi resync projects
+  const { syncAllUsersIfEmpty } = require('../services/user-sync');
+  await syncAllUsersIfEmpty(db);
+  await projectSync.syncIfEmpty(db);
   const isManager = req.user.phan_quyen === 'Admin' || req.user.phan_quyen === 'Quản lý';
 
   // Người dùng thường: chỉ thấy dự án mình phụ trách kỹ thuật/kế toán (quyền trình VB).
@@ -147,6 +152,9 @@ router.post('/import-sheet', authenticate, requirePermission('Quản lý dự á
   }
   try {
     const db = getDb();
+    // Sync tất cả users trước để resolveUserId hoạt động chính xác
+    const { syncAllUsersIfEmpty } = require('../services/user-sync');
+    await syncAllUsersIfEmpty(db);
     const ref = sheets.parseSheetRef(url);
     const { headers, rows } = await sheets.fetchAnySheet(ref.id, { gid: ref.gid, sheetName });
     const colIdx = {};
