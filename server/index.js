@@ -22,7 +22,16 @@ app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, messag
 // Database health check trước mọi route /api/*
 app.use('/api', (req, res, next) => {
   if (req.path === '/health') return next();
-  try { require('./db/database').getDb(); next(); }
+  try {
+    const dbMod = require('./db/database');
+    dbMod.getDb();
+    // Kéo dữ liệu mới từ Turso về replica (throttled) → instance "ấm" thấy
+    // được ghi từ instance khác. Force sync với các method ghi để chắc chắn
+    // request đọc ngay sau đó (cùng/khác instance) thấy thay đổi.
+    const isWrite = req.method !== 'GET' && req.method !== 'HEAD';
+    dbMod.syncReplica(isWrite);
+    next();
+  }
   catch (e) {
     console.error('[DB pre-check]', e.message, e.stack);
     return res.status(503).json({

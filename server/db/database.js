@@ -15,6 +15,30 @@ const config = require('../config');
 let _db = null;
 let _schemaApplied = false;
 
+// Throttle cho việc kéo (pull) dữ liệu mới từ Turso về replica /tmp.
+// Mỗi lambda instance giữ replica riêng; nếu không sync lại, instance "ấm"
+// sẽ phục vụ dữ liệu cũ do instance khác đã ghi → dự án/giai đoạn "biến mất".
+let _lastReplicaSyncAt = 0;
+const REPLICA_SYNC_THROTTLE_MS = parseInt(process.env.REPLICA_SYNC_THROTTLE_MS, 10) || 1500;
+
+/**
+ * Kéo dữ liệu mới từ Turso primary về replica local (no-op nếu không dùng Turso).
+ * Writes của libsql embedded replica là write-through (tự đẩy lên primary),
+ * nhưng READS chỉ thấy dữ liệu local → cần sync() định kỳ để thấy ghi từ instance khác.
+ * @param {boolean} force - bỏ qua throttle (dùng sau khi vừa ghi để read-your-writes chắc chắn).
+ */
+function syncReplica(force = false) {
+  if (!_db || !process.env.TURSO_DATABASE_URL) return;
+  const now = Date.now();
+  if (!force && now - _lastReplicaSyncAt < REPLICA_SYNC_THROTTLE_MS) return;
+  try {
+    _db.sync();
+    _lastReplicaSyncAt = now;
+  } catch (e) {
+    console.error('[DB sync]', e.message);
+  }
+}
+
 function getDb() {
   if (_db) return _db;
 
@@ -30,7 +54,7 @@ function getDb() {
         syncUrl: process.env.TURSO_DATABASE_URL,
         authToken: process.env.TURSO_AUTH_TOKEN,
       });
-      try { _db.sync(); } catch (e) { console.error('[DB sync]', e.message); }
+      try { _db.sync(); _lastReplicaSyncAt = Date.now(); } catch (e) { console.error('[DB sync]', e.message); }
     } else {
       // Local mode. Vercel: /tmp writable; dev: dùng config.db.path
       const dbPath = process.env.VERCEL ? '/tmp/esign-local.db' : config.db.path;
@@ -129,4 +153,4 @@ function _wrapPrepareToStripMetadata(db) {
   db.__metaPatched = true;
 }
 
-module.exports = { getDb, close };
+module.exports = { getDb, close, syncReplica };
