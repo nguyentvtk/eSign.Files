@@ -9,6 +9,7 @@ const auditLog = require('../services/audit-log');
 const otpService = require('../services/otp');
 const sheets = require('../services/google-sheets');
 const { upsertFromSheet } = require('../services/user-sync');
+const projectSync = require('../services/project-sync');
 // Alias giữ tương thích tên gọi cũ trong route login
 const _upsertUserFromSheet = (db, su) => upsertFromSheet(db, su);
 
@@ -85,6 +86,16 @@ router.post('/login', async (req, res) => {
     } catch (e) { /* ephemeral DB — bỏ qua */ }
 
     try { auditLog.log({ userId: user.id, userEmail: user.email, action: 'LOGIN_SUCCESS', ip: req.ip, userAgent: req.get('user-agent') }); } catch {}
+
+    // Auto-resync dự án từ Google Sheet nếu DB ephemeral (Vercel) bị mất data
+    // Await để đảm bảo dữ liệu dự án sẵn sàng khi client load trang
+    try {
+      dbg('project-sync start');
+      await projectSync.syncIfEmpty(db);
+      dbg('project-sync done');
+    } catch (e) {
+      console.error('[login project-sync]', e.message);
+    }
 
     const { password_hash, otp_secret, ...safeUser } = user;
     dbg('respond ok');

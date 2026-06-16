@@ -45,7 +45,21 @@ app.use('/api/permissions', require('./routes/permissions'));
 app.use('/api/projects', require('./routes/projects'));
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const sheetsData = require('./services/google-sheets-data');
+  const projectSync = require('./services/project-sync');
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    env: {
+      vercel: !!process.env.VERCEL,
+      turso: !!process.env.TURSO_DATABASE_URL,
+      dropbox: dropbox.isConfigured(),
+      gasWebapp: !!process.env.GAS_WEBAPP_URL,
+      sheetsData: sheetsData.isConfigured(),
+      projectSync: projectSync.isConfigured(),
+      googleSheetId: !!process.env.GOOGLE_SHEET_ID,
+    },
+  });
 });
 
 // Dropbox config API (Admin only)
