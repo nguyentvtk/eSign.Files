@@ -23,13 +23,9 @@ app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, messag
 app.use('/api', (req, res, next) => {
   if (req.path === '/health') return next();
   try {
-    const dbMod = require('./db/database');
-    dbMod.getDb();
-    // Kéo dữ liệu mới từ Turso về replica (throttled) → instance "ấm" thấy
-    // được ghi từ instance khác. Force sync với các method ghi để chắc chắn
-    // request đọc ngay sau đó (cùng/khác instance) thấy thay đổi.
-    const isWrite = req.method !== 'GET' && req.method !== 'HEAD';
-    dbMod.syncReplica(isWrite);
+    // Remote-only Turso: read/write đi thẳng tới primary nên luôn thấy dữ liệu
+    // mới nhất giữa mọi lambda instance (không còn replica /tmp bị lệch).
+    require('./db/database').getDb();
     next();
   }
   catch (e) {
@@ -52,23 +48,6 @@ app.use('/api/signing', require('./routes/signing'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/permissions', require('./routes/permissions'));
 app.use('/api/projects', require('./routes/projects'));
-
-// TEMP DIAGNOSTIC — write-probe để đọc lỗi Turso thật (sẽ gỡ sau khi chẩn đoán xong)
-app.get('/api/_dbprobe', (req, res) => {
-  const out = { url: (process.env.TURSO_DATABASE_URL || '').slice(0, 24), steps: {} };
-  try {
-    const db = getDb();
-    try { db.exec('CREATE TABLE IF NOT EXISTS _probe (id INTEGER PRIMARY KEY, t TEXT)'); out.steps.create = 'ok'; }
-    catch (e) { out.steps.create = e.message; }
-    try { db.prepare('INSERT INTO _probe (t) VALUES (?)').run(new Date().toISOString()); out.steps.insert = 'ok'; }
-    catch (e) { out.steps.insert = e.message; }
-    try { out.steps.count = db.prepare('SELECT COUNT(*) c FROM _probe').get().c; }
-    catch (e) { out.steps.count = e.message; }
-    try { out.steps.users = db.prepare('SELECT COUNT(*) c FROM users').get().c; }
-    catch (e) { out.steps.users = e.message; }
-  } catch (e) { out.fatal = e.message; }
-  res.json(out);
-});
 
 app.get('/api/health', (req, res) => {
   const sheetsData = require('./services/google-sheets-data');

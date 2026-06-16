@@ -1,7 +1,8 @@
 -- eSign Database Schema — Tuân thủ TT22/2020 & Luật GDĐT 2023
 -- Map theo cấu trúc Google Sheets: Nguoi_Dung, Phan_Quyen, Data
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+-- LƯU Ý: KHÔNG đặt PRAGMA ở đây — remote Turso báo "Sqlite3UnsupportedStatement"
+-- và HỦY toàn bộ batch exec(schema) → không bảng nào được tạo. Pragmas set bằng
+-- code trong database.js (journal_mode cho file local; foreign_keys mọi nơi).
 
 -- ═══════════════════════════════════════════════════════════
 -- NGƯỜI DÙNG (Sheet: Nguoi_Dung)
