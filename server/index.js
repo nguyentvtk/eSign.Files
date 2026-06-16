@@ -53,6 +53,23 @@ app.use('/api/audit', require('./routes/audit'));
 app.use('/api/permissions', require('./routes/permissions'));
 app.use('/api/projects', require('./routes/projects'));
 
+// TEMP DIAGNOSTIC — write-probe để đọc lỗi Turso thật (sẽ gỡ sau khi chẩn đoán xong)
+app.get('/api/_dbprobe', (req, res) => {
+  const out = { url: (process.env.TURSO_DATABASE_URL || '').slice(0, 24), steps: {} };
+  try {
+    const db = getDb();
+    try { db.exec('CREATE TABLE IF NOT EXISTS _probe (id INTEGER PRIMARY KEY, t TEXT)'); out.steps.create = 'ok'; }
+    catch (e) { out.steps.create = e.message; }
+    try { db.prepare('INSERT INTO _probe (t) VALUES (?)').run(new Date().toISOString()); out.steps.insert = 'ok'; }
+    catch (e) { out.steps.insert = e.message; }
+    try { out.steps.count = db.prepare('SELECT COUNT(*) c FROM _probe').get().c; }
+    catch (e) { out.steps.count = e.message; }
+    try { out.steps.users = db.prepare('SELECT COUNT(*) c FROM users').get().c; }
+    catch (e) { out.steps.users = e.message; }
+  } catch (e) { out.fatal = e.message; }
+  res.json(out);
+});
+
 app.get('/api/health', (req, res) => {
   const sheetsData = require('./services/google-sheets-data');
   const projectSync = require('./services/project-sync');
