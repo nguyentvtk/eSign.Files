@@ -62,19 +62,33 @@ router.post('/approve', authenticate, requireRole('Admin', 'Quản lý'), async 
   }
   // Nếu file local không tồn tại (Vercel ephemeral) hoặc URL là HTTP, tải về
   if (!localPath || !fs.existsSync(localPath)) {
-    // Thử tải từ URL gốc (Dropbox hoặc URL khác)
-    const downloadUrl = doc.file_url?.startsWith('http') ? doc.file_url : null;
+    // Thử tải từ URL gốc (Dropbox hoặc URL khác). Với link Dropbox phải ép
+    // dl=1 — nếu để ?dl=0, Dropbox trả TRANG HTML preview (không phải PDF),
+    // khiến pdf-lib báo "No PDF header found" khi stamp.
+    let downloadUrl = doc.file_url?.startsWith('http') ? doc.file_url : null;
     if (downloadUrl) {
+      try {
+        const u = new URL(downloadUrl);
+        if (/(^|\.)dropbox(usercontent)?\.com$/i.test(u.hostname)) {
+          u.searchParams.set('dl', '1');
+          downloadUrl = u.toString();
+        }
+      } catch {}
       console.log('[SIGN] Local file missing, downloading from:', downloadUrl.substring(0, 80) + '...');
       try {
-        const resp = await fetch(downloadUrl);
+        const resp = await fetch(downloadUrl, { redirect: 'follow' });
         if (resp.ok) {
           const buf = Buffer.from(await resp.arrayBuffer());
-          const tempDir = pathMod.join(config_.upload.dir, 'temp');
-          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-          const tempPath = pathMod.join(tempDir, `${Date.now()}_${doc.file_name}`);
-          fs.writeFileSync(tempPath, buf);
-          localPath = tempPath;
+          // Chặn trường hợp tải nhầm HTML (link sai) → báo lỗi rõ thay vì stamp lỗi
+          if (buf.slice(0, 5).toString('latin1') !== '%PDF-') {
+            console.error('[SIGN] downloaded file không phải PDF (5 byte đầu):', buf.slice(0, 5).toString('latin1'));
+          } else {
+            const tempDir = pathMod.join(config_.upload.dir, 'temp');
+            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+            const tempPath = pathMod.join(tempDir, `${Date.now()}_${doc.file_name}`);
+            fs.writeFileSync(tempPath, buf);
+            localPath = tempPath;
+          }
         } else {
           console.error('[SIGN] download original failed: HTTP', resp.status);
         }
