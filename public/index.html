@@ -524,6 +524,36 @@
             </div>
           </div>
         </div>
+        <div class="col-lg-12">
+          <div class="data-card">
+            <div class="data-card-header"><h3 class="data-card-title"><i class="bi bi-pen"></i> Chữ ký số của tôi (ảnh hiển thị khi ký)</h3></div>
+            <div class="nd-card-body">
+              <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Tải lên <b>ảnh chữ ký tay</b> (nền trong, PNG) và <b>ảnh con dấu</b>. Hệ thống sẽ chèn các ảnh này vào tài liệu tại vị trí bạn đặt khi ký số. (PNG/JPG, &lt; 2MB)</p>
+              <div class="row g-4">
+                <div class="col-md-6">
+                  <label class="form-label" style="font-weight:600">Ảnh chữ ký tay</label>
+                  <div id="sig-preview-wrap" style="border:1px dashed var(--border,#cbd5e1);border-radius:8px;min-height:90px;display:flex;align-items:center;justify-content:center;background:#f8fafc;padding:8px">
+                    <img id="sig-preview" style="max-height:80px;max-width:100%;display:none" alt="">
+                    <span id="sig-empty" style="font-size:12px;color:var(--text-muted)">Chưa có ảnh chữ ký</span>
+                  </div>
+                  <input type="file" class="form-control mt-2" id="sig-file" accept="image/png,image/jpeg" style="font-size:13px">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" style="font-weight:600">Ảnh con dấu</label>
+                  <div id="seal-preview-wrap" style="border:1px dashed var(--border,#cbd5e1);border-radius:8px;min-height:90px;display:flex;align-items:center;justify-content:center;background:#f8fafc;padding:8px">
+                    <img id="seal-preview" style="max-height:80px;max-width:100%;display:none" alt="">
+                    <span id="seal-empty" style="font-size:12px;color:var(--text-muted)">Chưa có ảnh con dấu</span>
+                  </div>
+                  <input type="file" class="form-control mt-2" id="seal-file" accept="image/png,image/jpeg" style="font-size:13px">
+                </div>
+              </div>
+              <div class="mt-3 d-flex gap-2">
+                <button class="btn-primary-custom" id="btn-save-signature"><i class="bi bi-save"></i> Lưu chữ ký số</button>
+                <button class="btn-outline-custom" id="btn-clear-signature" style="font-size:13px"><i class="bi bi-trash"></i> Xoá ảnh</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

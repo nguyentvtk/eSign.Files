@@ -935,8 +935,81 @@
   const _origNav = navigateTo;
   navigateTo = function(page) {
     _origNav(page);
-    if (page === 'settings') loadDropboxStatus();
+    if (page === 'settings') { loadDropboxStatus(); loadSignatureSettings(); }
   };
+
+  // ── Chữ ký số: ảnh chữ ký tay + con dấu ──
+  let _sigImage = null, _sealImage = null; // data URL hiện tại
+
+  async function loadSignatureSettings() {
+    try {
+      const r = await _fetchAuth('/api/users/me/signature');
+      if (!r.success) return;
+      _sigImage = r.data.chu_ky_image || null;
+      _sealImage = r.data.con_dau_image || null;
+      _renderSigPreview('sig', _sigImage);
+      _renderSigPreview('seal', _sealImage);
+    } catch {}
+  }
+
+  function _renderSigPreview(kind, dataUrl) {
+    const img = $(`#${kind}-preview`), empty = $(`#${kind}-empty`);
+    if (!img) return;
+    if (dataUrl) { img.src = dataUrl; img.style.display = 'block'; if (empty) empty.style.display = 'none'; }
+    else { img.removeAttribute('src'); img.style.display = 'none'; if (empty) empty.style.display = 'block'; }
+  }
+
+  // Nén ảnh về PNG ≤ maxW để giữ nền trong & dung lượng nhỏ
+  function _fileToPng(file, maxW = 600) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => {
+        const im = new Image();
+        im.onload = () => {
+          const scale = Math.min(1, maxW / im.width);
+          const c = document.createElement('canvas');
+          c.width = Math.round(im.width * scale); c.height = Math.round(im.height * scale);
+          c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/png'));
+        };
+        im.onerror = () => reject(new Error('Ảnh không hợp lệ'));
+        im.src = fr.result;
+      };
+      fr.onerror = () => reject(new Error('Không đọc được file'));
+      fr.readAsDataURL(file);
+    });
+  }
+
+  document.addEventListener('change', async (e) => {
+    if (e.target.id === 'sig-file' || e.target.id === 'seal-file') {
+      const f = e.target.files[0]; if (!f) return;
+      try {
+        const dataUrl = await _fileToPng(f);
+        if (e.target.id === 'sig-file') { _sigImage = dataUrl; _renderSigPreview('sig', dataUrl); }
+        else { _sealImage = dataUrl; _renderSigPreview('seal', dataUrl); }
+      } catch (err) { Toast.error(err.message); }
+    }
+  });
+
+  document.addEventListener('click', async (e) => {
+    if (e.target.closest('#btn-save-signature')) {
+      const r = await _fetchAuth('/api/users/me/signature', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chu_ky_image: _sigImage || '', con_dau_image: _sealImage || '' }),
+      });
+      if (r.success) Toast.success('Đã lưu chữ ký số.'); else Toast.error(r.error || 'Lỗi lưu.');
+    }
+    if (e.target.closest('#btn-clear-signature')) {
+      _sigImage = null; _sealImage = null;
+      _renderSigPreview('sig', null); _renderSigPreview('seal', null);
+      const sf = $('#sig-file'), slf = $('#seal-file'); if (sf) sf.value = ''; if (slf) slf.value = '';
+      const r = await _fetchAuth('/api/users/me/signature', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chu_ky_image: '', con_dau_image: '' }),
+      });
+      if (r.success) Toast.success('Đã xoá ảnh chữ ký.');
+    }
+  });
 
   // ── Init ──
   if(API.isLoggedIn()) showDashboard(); else showLogin();

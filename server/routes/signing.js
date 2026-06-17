@@ -104,9 +104,15 @@ router.post('/approve', authenticate, requireRole('Admin', 'Quản lý'), async 
   }
 
   try {
-    const sigImage = signature_image_base64
-      ? Buffer.from(signature_image_base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+    const toBuf = (dataUrl) => dataUrl
+      ? Buffer.from(String(dataUrl).replace(/^data:image\/\w+;base64,/, ''), 'base64')
       : null;
+
+    // Ảnh chữ ký tay & con dấu của lãnh đạo (đã upload trong hồ sơ). Nếu request
+    // gửi kèm signature_image_base64 thì ưu tiên (vd vẽ tại chỗ).
+    const signerImgs = db.prepare('SELECT chu_ky_image, con_dau_image FROM users WHERE id = ?').get(req.user.id) || {};
+    const sigImage = toBuf(signature_image_base64) || toBuf(signerImgs.chu_ky_image);
+    const sealImage = toBuf(signerImgs.con_dau_image);
 
     const stampResult = await stampSignatureOnPdf(localPath, {
       signerName,
@@ -114,7 +120,7 @@ router.post('/approve', authenticate, requireRole('Admin', 'Quản lý'), async 
       method: method === 'remote' ? 'Remote Signing' : 'USB Token',
       issuer: certInfo.issuer || 'N/A',
       serial: certInfo.serial || 'N/A',
-    }, stamp_position || null, sigImage);
+    }, stamp_position || null, sigImage, sealImage);
 
     // Upload file đã ký lên Dropbox
     const subfolder = `${doc.ma_doc}_da-ky`;

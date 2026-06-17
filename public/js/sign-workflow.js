@@ -366,9 +366,18 @@ window.SignWorkflow = (() => {
       };
     } catch (err) {
       console.error('[SignWithToken]', err);
-      const msg = err.message === 'USER_CANCELLED'
-        ? 'Người dùng đã huỷ thao tác.'
-        : (err.message || 'Lỗi ký số');
+      let msg;
+      if (err.message === 'USER_CANCELLED') {
+        msg = 'Người dùng đã huỷ thao tác.';
+      } else if (err.code === 'NO_MIDDLEWARE' || err.message === 'NO_MIDDLEWARE') {
+        const prov = err.provider || 'phần mềm ký số';
+        msg = `Không tìm thấy phần mềm ký số (${prov}) trên máy.\n\n`
+          + 'Vui lòng cài & MỞ middleware của nhà cung cấp chứng thư số rồi cắm USB Token:\n'
+          + '• VNPT-CA Plugin, VGCA (Ban Cơ yếu), Viettel-CA, BKAV-CA hoặc FPT-CA.\n\n'
+          + 'Cửa sổ nhập mã PIN sẽ do phần mềm này hiển thị khi ký.';
+      } else {
+        msg = err.message || 'Lỗi ký số';
+      }
       _renderError(msg);
     }
   }

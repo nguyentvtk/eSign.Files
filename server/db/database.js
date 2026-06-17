@@ -68,6 +68,7 @@ function getDb() {
         // Schema có thể đã apply rồi (idempotent CREATE TABLE IF NOT EXISTS) — không throw
       }
       _migrate(_db);
+      _migrateUsers(_db);
     }
 
     return _db;
@@ -105,6 +106,22 @@ function _migrate(db) {
     add('sheet_source', 'TEXT');          // JSON config nguồn sheet (để re-sync)
   } catch (e) {
     console.error('[migrate] failed:', e.message);
+  }
+}
+
+/** Migration cho bảng users — ảnh chữ ký tay & con dấu của lãnh đạo (data URL base64). */
+function _migrateUsers(db) {
+  try {
+    const cols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+    const add = (name, def) => {
+      if (!cols.includes(name)) {
+        try { db.exec(`ALTER TABLE users ADD COLUMN ${name} ${def}`); } catch (e) { console.error('[migrate users]', name, e.message); }
+      }
+    };
+    add('chu_ky_image', 'TEXT');   // ảnh chữ ký tay (PNG nền trong) — data URL
+    add('con_dau_image', 'TEXT');  // ảnh con dấu đỏ — data URL
+  } catch (e) {
+    console.error('[migrate users] failed:', e.message);
   }
 }
 

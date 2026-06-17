@@ -11,9 +11,10 @@ const config = require('../config');
  * @param {Object} info - Thông tin chữ ký
  * @param {Object} pos  - Vị trí stamp: { page (1-based), x, y, width, height }
  *                        Toạ độ tính theo PDF coordinate (origin = bottom-left)
- * @param {Buffer} [signatureImage] - Ảnh PNG/JPG chữ ký (optional)
+ * @param {Buffer} [signatureImage] - Ảnh PNG/JPG chữ ký tay của lãnh đạo (optional)
+ * @param {Buffer} [sealImage] - Ảnh PNG/JPG con dấu đỏ (optional)
  */
-async function stampSignatureOnPdf(pdfPath, info, pos = null, signatureImage = null) {
+async function stampSignatureOnPdf(pdfPath, info, pos = null, signatureImage = null, sealImage = null) {
   const pdfBytes = fs.readFileSync(pdfPath);
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const pages = pdfDoc.getPages();
@@ -32,56 +33,73 @@ async function stampSignatureOnPdf(pdfPath, info, pos = null, signatureImage = n
   const stampX = pos?.x !== undefined ? pos.x : pageW - stampW - 30;
   const stampY = pos?.y !== undefined ? pos.y : 30;
 
-  // Vẽ khung viền + nền
-  targetPage.drawRectangle({
-    x: stampX, y: stampY,
-    width: stampW, height: stampH,
-    borderColor: rgb(0.86, 0.15, 0.15),
-    borderWidth: 1.2,
-    color: rgb(1, 1, 1),
-    opacity: 0.95,
-  });
+  const hasSignature = !!signatureImage;
+  const hasSeal = !!sealImage;
+  const hasImages = hasSignature || hasSeal;
 
-  // Nếu có ảnh chữ ký (từ USB Token đã setup sẵn) → embed
-  if (signatureImage) {
+  const embedImg = async (buf) => {
+    if (!buf) return null;
     try {
-      let img;
-      // Detect PNG vs JPG
-      if (signatureImage[0] === 0x89 && signatureImage[1] === 0x50) {
-        img = await pdfDoc.embedPng(signatureImage);
-      } else {
-        img = await pdfDoc.embedJpg(signatureImage);
-      }
-      const imgScale = Math.min((stampW - 10) / img.width, (stampH - 30) / img.height);
-      targetPage.drawImage(img, {
-        x: stampX + 5,
-        y: stampY + stampH - 5 - img.height * imgScale,
-        width: img.width * imgScale,
-        height: img.height * imgScale,
-      });
-    } catch (e) {
-      console.error('[Stamp] embed image failed:', e.message);
-    }
+      return (buf[0] === 0x89 && buf[1] === 0x50) ? await pdfDoc.embedPng(buf) : await pdfDoc.embedJpg(buf);
+    } catch (e) { console.error('[Stamp] embed image failed:', e.message); return null; }
+  };
+
+  // Khung viền: ẩn khi đã có ảnh chữ ký/con dấu (để chữ ký số nhìn tự nhiên như ký tay);
+  // chỉ vẽ khung khi không có ảnh (fallback text-only).
+  if (!hasImages) {
+    targetPage.drawRectangle({
+      x: stampX, y: stampY, width: stampW, height: stampH,
+      borderColor: rgb(0.86, 0.15, 0.15), borderWidth: 1.2,
+      color: rgb(1, 1, 1), opacity: 0.95,
+    });
   }
 
-  // Vẽ thông tin chữ ký (text)
-  const textLines = [
-    `Ky boi: ${_ascii(info.signerName || 'N/A')}`,
-    `Thoi gian: ${info.signedAt || new Date().toISOString()}`,
-    `Phuong thuc: ${info.method || 'USB Token'}`,
-  ];
-  if (info.issuer) textLines.push(`CA: ${_ascii(info.issuer).substring(0, 35)}`);
-  if (info.serial) textLines.push(`Serial: ${String(info.serial).substring(0, 18)}`);
+  // 1) Con dấu đỏ — vẽ làm lớp nền (hơi mờ) để chữ ký tay đè lên, giống dấu giáp văn bản
+  const sealPng = await embedImg(sealImage);
+  if (sealPng) {
+    const sealMax = Math.min(stampW, stampH) * 0.95;
+    const sScale = Math.min(sealMax / sealPng.width, sealMax / sealPng.height);
+    const sw = sealPng.width * sScale, sh = sealPng.height * sScale;
+    targetPage.drawImage(sealPng, {
+      x: stampX + (stampW - sw) / 2,
+      y: stampY + (stampH - sh) / 2,
+      width: sw, height: sh,
+      opacity: 0.9,
+    });
+  }
 
-  const fontSize = 7.5;
-  const lineHeight = 9;
+  // 2) Ảnh chữ ký tay của lãnh đạo — vẽ phía trên, chiếm ~60% chiều cao
+  const sigPng = await embedImg(signatureImage);
+  if (sigPng) {
+    const areaW = stampW - 10, areaH = stampH * (hasSeal ? 0.55 : 0.62);
+    const iScale = Math.min(areaW / sigPng.width, areaH / sigPng.height);
+    const iw = sigPng.width * iScale, ih = sigPng.height * iScale;
+    targetPage.drawImage(sigPng, {
+      x: stampX + (stampW - iw) / 2,
+      y: stampY + stampH - ih - 4,
+      width: iw, height: ih,
+    });
+  }
+
+  // 3) Text thông tin ký số — gọn ở đáy. Khi có ảnh: chỉ tên + thời gian (nền chữ ký đã rõ);
+  //    khi không ảnh: đủ thông tin CA/Serial (fallback).
+  const textLines = [`Ky boi: ${_ascii(info.signerName || 'N/A')}`,
+                     `Thoi gian: ${info.signedAt || new Date().toISOString()}`];
+  if (!hasImages) {
+    textLines.push(`Phuong thuc: ${info.method || 'USB Token'}`);
+    if (info.issuer) textLines.push(`CA: ${_ascii(info.issuer).substring(0, 35)}`);
+    if (info.serial) textLines.push(`Serial: ${String(info.serial).substring(0, 18)}`);
+  }
+
+  const fontSize = hasImages ? 6.5 : 7.5;
+  const lineHeight = hasImages ? 7.5 : 9;
   textLines.forEach((line, i) => {
     targetPage.drawText(line, {
-      x: stampX + 5,
-      y: stampY + 5 + (textLines.length - 1 - i) * lineHeight,
+      x: stampX + 4,
+      y: stampY + 3 + (textLines.length - 1 - i) * lineHeight,
       size: fontSize,
       font,
-      color: rgb(0.12, 0.12, 0.12),
+      color: rgb(0.12, 0.12, 0.45),
     });
   });
 

@@ -153,7 +153,15 @@ window.UsbTokenSigner = (() => {
       await _checkHttpMiddleware(prov.http);
       return { type: 'http', baseUrl: prov.http };
     } catch {}
-    return { type: 'simulation' };
+    // KHÔNG giả lập nữa: nếu thiếu middleware → báo lỗi rõ để người dùng cài plugin.
+    // Cho phép bật demo có chủ đích qua localStorage('esign_allow_sim') = '1'.
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('esign_allow_sim') === '1') {
+      return { type: 'simulation' };
+    }
+    const err = new Error('NO_MIDDLEWARE');
+    err.code = 'NO_MIDDLEWARE';
+    err.provider = prov.name;
+    throw err;
   }
 
   function _tryWebSocket(url, timeoutMs = 2500) {

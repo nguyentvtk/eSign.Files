@@ -74,6 +74,32 @@ router.get('/approvers', authenticate, async (req, res) => {
   res.json({ success: true, data: rows });
 });
 
+// GET /users/me/signature — ảnh chữ ký & con dấu của chính mình
+router.get('/me/signature', authenticate, (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT chu_ky_image, con_dau_image FROM users WHERE id = ?').get(req.user.id) || {};
+  res.json({ success: true, data: { chu_ky_image: row.chu_ky_image || '', con_dau_image: row.con_dau_image || '' } });
+});
+
+// PUT /users/me/signature — cập nhật ảnh chữ ký tay / con dấu (data URL PNG/JPG)
+router.put('/me/signature', authenticate, (req, res) => {
+  const { chu_ky_image, con_dau_image } = req.body || {};
+  const valid = (v) => v === undefined || v === null || v === '' ||
+    (typeof v === 'string' && /^data:image\/(png|jpe?g);base64,/.test(v) && v.length < 3_000_000);
+  if (!valid(chu_ky_image) || !valid(con_dau_image)) {
+    return res.status(400).json({ success: false, error: 'Ảnh không hợp lệ (chỉ PNG/JPG, < ~2MB).' });
+  }
+  const db = getDb();
+  const sets = [], params = [];
+  if (chu_ky_image !== undefined) { sets.push('chu_ky_image = ?'); params.push(chu_ky_image || null); }
+  if (con_dau_image !== undefined) { sets.push('con_dau_image = ?'); params.push(con_dau_image || null); }
+  if (!sets.length) return res.status(400).json({ success: false, error: 'Không có dữ liệu cập nhật.' });
+  sets.push("updated_at = datetime('now')");
+  params.push(req.user.id);
+  db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  res.json({ success: true, message: 'Đã lưu chữ ký số.' });
+});
+
 router.get('/:id', authenticate, (req, res) => {
   const db = getDb();
   const user = db.prepare(`SELECT ${SAFE_COLS} FROM users WHERE id = ?`).get(req.params.id);
