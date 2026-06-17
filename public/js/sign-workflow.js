@@ -12,6 +12,15 @@ window.SignWorkflow = (() => {
   const esc = s => String(s ?? '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
   const fmtSize = b => b < 1024 ? b+' B' : b < 1048576 ? (b/1024).toFixed(1)+' KB' : (b/1048576).toFixed(2)+' MB';
 
+  // Tải nội dung file. URL ngoài (Dropbox…) bị CORS khi fetch từ browser →
+  // định tuyến qua proxy cùng-origin của server (có gắn Authorization).
+  function _fetchFile(url) {
+    const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+    const isExternal = /^https?:\/\//i.test(url) && !url.startsWith(location.origin);
+    const target = isExternal ? `/api/documents/proxy?url=${encodeURIComponent(url)}` : url;
+    return fetch(target, { headers: { 'Authorization': 'Bearer ' + token } });
+  }
+
   let _doc = null;       // Doc data
   let _pdfDoc = null;    // PDF.js document
   let _currentPage = 1;
@@ -75,8 +84,8 @@ window.SignWorkflow = (() => {
     $('#sw-loading').style.display = 'flex';
     $('#sw-loading-text').textContent = 'Đang tải PDF…';
     try {
-      // Nếu URL là Dropbox direct link với ?dl=1, fetch về dạng arraybuffer
-      const resp = await fetch(url);
+      // Fetch qua proxy cùng-origin (tránh CORS với link Dropbox)
+      const resp = await _fetchFile(url);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const buf = await resp.arrayBuffer();
       _pdfDoc = await window.pdfjsLib.getDocument({ data: buf }).promise;
@@ -151,7 +160,7 @@ window.SignWorkflow = (() => {
       if (!confirm(`Đã chuyển DOCX → PDF thành công.\nThay thế file chính bằng: ${data.data.file_name}?`)) return;
 
       // Tải PDF vừa convert về và upload làm file chính
-      const pdfResp = await fetch(data.data.file_url);
+      const pdfResp = await _fetchFile(data.data.file_url);
       const blob = await pdfResp.blob();
       const file = new File([blob], data.data.file_name, { type: 'application/pdf' });
       await _replaceMainFile(file);
@@ -290,7 +299,7 @@ window.SignWorkflow = (() => {
     try {
       // 1. Tải PDF gốc để gửi cho Middleware (signer cần PDF binary)
       _renderPhase('connecting', 5, 'Tải PDF gốc…');
-      const pdfResp = await fetch(_doc.file_url);
+      const pdfResp = await _fetchFile(_doc.file_url);
       if (!pdfResp.ok) throw new Error('Không tải được PDF gốc: HTTP ' + pdfResp.status);
       const pdfBlob = await pdfResp.blob();
       const pdfBase64 = await _blobToBase64(pdfBlob);

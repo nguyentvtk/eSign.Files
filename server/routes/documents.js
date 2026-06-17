@@ -9,6 +9,7 @@ const { authenticate, requirePermission } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 const { hashPdfFile } = require('../utils/pdf-utils');
 const dropbox = require('../services/dropbox');
+const sheetsData = require('../services/google-sheets-data');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -125,6 +126,35 @@ router.get('/pending', authenticate, requirePermission('Tài liệu chờ ký'),
   res.json({ success: true, data: docs });
 });
 
+// GET /documents/proxy?url=<dropbox url> — stream file qua server để tránh CORS
+// trên trình duyệt (Dropbox không cho fetch cross-origin & ?dl=0 trả HTML preview).
+// Giới hạn host Dropbox để không thành open-proxy. PHẢI khai báo trước route /:id.
+router.get('/proxy', authenticate, async (req, res) => {
+  const raw = req.query.url;
+  if (!raw || !/^https?:\/\//i.test(raw)) {
+    return res.status(400).json({ success: false, error: 'Thiếu hoặc sai URL.' });
+  }
+  let u;
+  try { u = new URL(raw); } catch { return res.status(400).json({ success: false, error: 'URL không hợp lệ.' }); }
+  if (!/(^|\.)dropbox(usercontent)?\.com$/i.test(u.hostname)) {
+    return res.status(403).json({ success: false, error: 'Chỉ hỗ trợ proxy file Dropbox.' });
+  }
+  try {
+    u.searchParams.set('dl', '1'); // ép tải file thô thay vì trang preview
+    const r = await fetch(u.toString(), { redirect: 'follow' });
+    if (!r.ok) return res.status(502).json({ success: false, error: 'Không tải được file nguồn: HTTP ' + r.status });
+    const ct = r.headers.get('content-type') || '';
+    // Dropbox trả HTML khi link sai → chặn để client báo lỗi rõ ràng
+    res.setHeader('Content-Type', ct.includes('html') ? 'application/pdf' : (ct || 'application/pdf'));
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    const ab = await r.arrayBuffer();
+    res.send(Buffer.from(ab));
+  } catch (e) {
+    console.error('[doc proxy]', e.message);
+    res.status(502).json({ success: false, error: e.message });
+  }
+});
+
 // GET /documents/:id
 router.get('/:id', authenticate, (req, res) => {
   const db = getDb();
@@ -233,6 +263,24 @@ router.post('/', authenticate, requirePermission('Khởi tạo tài liệu'), (r
           phaseName: phase?.ten_giai_doan,
         }).catch(e => console.error('[Notify]', e.message));
       } catch (e) { console.error('[Notify wrap]', e.message); }
+
+      // Ghi thông tin vào sheet Data
+      try {
+        const project = project_id ? db.prepare('SELECT ten_du_an FROM projects WHERE id = ?').get(parseInt(project_id)) : null;
+        sheetsData.appendDocumentRow({
+          ngayTao: new Date().toISOString(),
+          maDoc,
+          tenTaiLieu: ten_tai_lieu,
+          loaiTaiLieu: loai_van_ban || loai_tai_lieu || '',
+          tenDuAn: project?.ten_du_an || '',
+          tenFile: mainFile.originalname,
+          fileUrl: mainUpload.url,
+          fileSize: mainFile.size,
+          nguoiTao: req.user.ho_ten,
+          trangThai: 'Chờ ký',
+          ghiChu: ghi_chu || '',
+        }).catch(e => console.error('[sheets-data write]', e.message));
+      } catch (e) { console.error('[sheets-data wrap]', e.message); }
 
       res.status(201).json({ success: true, data: { id: docId, ma_doc: maDoc, so_van_ban: finalSoVanBan, file_url: mainUpload.url } });
     } catch (e) {
