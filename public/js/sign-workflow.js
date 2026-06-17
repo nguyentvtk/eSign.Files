@@ -442,6 +442,16 @@ window.SignWorkflow = (() => {
     $('#sw-cancel-sign-mode')?.addEventListener('click', _exitSignMode);
     $('#sw-confirm-sign')?.addEventListener('click', _signWithToken);
 
+    // ── Ký rời (VGCA) ──
+    $('#sw-detached-sign')?.addEventListener('click', _toggleDetachedPanel);
+    $('#sw-detached-cancel')?.addEventListener('click', () => { $('#sw-detached-panel').style.display = 'none'; });
+    $('#sw-dl-original')?.addEventListener('click', _downloadOriginal);
+    $('#sw-signed-input')?.addEventListener('change', (e) => {
+      $('#sw-upload-signed').disabled = !e.target.files?.length;
+      $('#sw-detached-result').innerHTML = '';
+    });
+    $('#sw-upload-signed')?.addEventListener('click', _uploadSignedPdf);
+
     $('#sw-reject')?.addEventListener('click', async () => {
       const reason = prompt('Lý do từ chối:');
       if (!reason) return;
@@ -522,6 +532,101 @@ window.SignWorkflow = (() => {
       });
     }
   });
+
+  /* ─── Ký rời (VGCA / app desktop) ─── */
+  function _toggleDetachedPanel() {
+    const p = $('#sw-detached-panel');
+    const show = p.style.display === 'none' || !p.style.display;
+    p.style.display = show ? 'block' : 'none';
+    if (show) {
+      _setStep(4);
+      $('#sw-signed-input').value = '';
+      $('#sw-upload-signed').disabled = true;
+      $('#sw-detached-result').innerHTML = '';
+      const h = _doc?.file_hash_sha256;
+      $('#sw-orig-hash').textContent = h ? `SHA-256 bản gốc: ${h}` : '';
+    }
+  }
+
+  async function _downloadOriginal() {
+    try {
+      const resp = await _fetchFile(_doc.file_url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${_doc.ma_doc || 'tai-lieu'}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      window.Toast?.success('Đã tải PDF gốc. Hãy ký bằng phần mềm VGCA rồi upload lại.');
+    } catch (e) {
+      window.Toast?.error('Không tải được PDF gốc: ' + e.message);
+    }
+  }
+
+  async function _uploadSignedPdf() {
+    const file = $('#sw-signed-input').files?.[0];
+    if (!file) { window.Toast?.warning('Vui lòng chọn file PDF đã ký.'); return; }
+
+    const btn = $('#sw-upload-signed');
+    const resultEl = $('#sw-detached-result');
+    btn.disabled = true;
+    resultEl.innerHTML = '<span style="color:var(--text-muted)"><i class="bi bi-hourglass-split"></i> Đang upload & xác minh chữ ký số…</span>';
+
+    try {
+      const fd = new FormData();
+      fd.append('document_id', _doc.id);
+      fd.append('signed_file', file);
+      const otp = await _maybePromptOtp();
+      if (otp) fd.append('otp_token', otp);
+
+      const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+      const resp = await fetch('/api/signing/upload-signed', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: fd,
+      });
+      const d = await resp.json();
+
+      if (!d.success) {
+        resultEl.innerHTML = `<div style="color:#B91C1C"><i class="bi bi-x-octagon"></i> ${esc(d.error || 'Xác minh thất bại')}</div>`;
+        btn.disabled = false;
+        return;
+      }
+
+      const c = d.data.certificate || {};
+      const trustBadge = d.data.trusted
+        ? `<span style="color:#059669"><i class="bi bi-shield-fill-check"></i> Chuỗi tin cậy: ${esc(d.data.trustAnchor || 'Root CA')}</span>`
+        : `<span style="color:#B45309"><i class="bi bi-shield-exclamation"></i> Chưa xác thực chuỗi tin cậy</span>`;
+      const chainStr = Array.isArray(d.data.chain) ? d.data.chain.map(esc).join(' → ') : '';
+      resultEl.innerHTML =
+        `<div style="color:#059669;font-weight:600"><i class="bi bi-patch-check-fill"></i> Chữ ký số hợp lệ — đã hoàn tất ký!</div>
+         <div style="margin-top:8px;background:#F9FAFB;border:1px solid var(--card-border);border-radius:8px;padding:10px;line-height:1.7">
+           <div><strong>Người ký:</strong> ${esc(d.data.signer || '')}</div>
+           <div><strong>Chứng thư (Subject):</strong> ${esc(c.subject || 'N/A')}</div>
+           <div><strong>Nhà phát hành (Issuer):</strong> ${esc(c.issuer || 'N/A')}</div>
+           <div><strong>Serial:</strong> ${esc(c.serial || 'N/A')}</div>
+           <div><strong>Hiệu lực:</strong> ${esc((c.validFrom||'').slice(0,10))} → ${esc((c.validTo||'').slice(0,10))}</div>
+           <div><strong>Thuật toán băm:</strong> ${esc(d.data.digestAlgorithm || 'N/A')}</div>
+           <div>${trustBadge}</div>
+           ${chainStr ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${chainStr}</div>` : ''}
+         </div>`;
+      window.Toast?.success('Ký số thành công!');
+      setTimeout(() => { _modal?.hide(); window.App?.loadPending?.(); window.location.reload(); }, 2200);
+    } catch (e) {
+      resultEl.innerHTML = `<div style="color:#B91C1C"><i class="bi bi-x-octagon"></i> Lỗi: ${esc(e.message)}</div>`;
+      btn.disabled = false;
+    }
+  }
+
+  // Nếu tài khoản bật OTP, hỏi mã trước khi upload (server cũng kiểm tra lại)
+  async function _maybePromptOtp() {
+    try {
+      const needsOtp = window.App?.currentUser?.otp_enabled;
+      if (!needsOtp) return '';
+    } catch {}
+    return (prompt('Nhập mã OTP (Google Authenticator) để ký:') || '').trim();
+  }
 
   return { open, close, _convertAndReplace };
 })();

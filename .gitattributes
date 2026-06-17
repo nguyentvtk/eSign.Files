@@ -1,0 +1,7 @@
+# Chứng thư số & file nhị phân — KHÔNG được chuyển đổi EOL (tránh hỏng DER)
+*.crt binary
+*.cer binary
+*.der binary
+*.pem binary
+*.p7b binary
+*.pdf binary

@@ -621,14 +621,15 @@
             <button class="btn-outline-custom" id="sw-tab-attach"><i class="bi bi-paperclip"></i> File đính kèm <span id="sw-attach-count">0</span></button>
             <button class="btn-outline-custom" id="sw-replace-pdf"><i class="bi bi-upload"></i> Tải PDF thay thế</button>
             <input type="file" id="sw-replace-input" accept=".pdf" style="display:none">
-            <select id="sw-provider" class="nd-input" style="width:auto;padding:6px 30px 6px 10px;font-size:13px" title="Nhà cung cấp USB Token">
+            <button class="btn-primary-custom" id="sw-detached-sign" title="Ký bằng phần mềm desktop (VGCA Ban Cơ yếu…) rồi upload lại"><i class="bi bi-shield-lock"></i> Ký rời (VGCA)</button>
+            <select id="sw-provider" class="nd-input" style="width:auto;padding:6px 30px 6px 10px;font-size:13px;display:none" title="Nhà cung cấp USB Token">
               <option value="vnpt">VNPT-CA</option>
               <option value="vgca">VGCA (Ban Cơ yếu)</option>
               <option value="viettel">Viettel-CA</option>
               <option value="bkav">BKAV-CA</option>
               <option value="fpt">FPT-CA</option>
             </select>
-            <button class="btn-primary-custom" id="sw-enter-sign-mode"><i class="bi bi-pen"></i> Chuyển sang chế độ ký</button>
+            <button class="btn-outline-custom" id="sw-enter-sign-mode" title="Ký qua middleware USB Token cục bộ (thử nghiệm)"><i class="bi bi-usb-drive"></i> USB Token</button>
             <button class="btn-doc-action reject" id="sw-reject" style="min-height:auto"><i class="bi bi-x-circle"></i> Từ chối</button>
           </div>
         </div>
@@ -651,6 +652,48 @@
         <div id="sw-attach-panel" style="display:none;background:#fff;border-top:1px solid var(--card-border);padding:14px 18px;max-height:200px;overflow-y:auto">
           <div style="font-size:13px;font-weight:600;margin-bottom:8px">File đính kèm</div>
           <div id="sw-attach-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+
+        <!-- Detached signing panel (Ký rời VGCA) -->
+        <div id="sw-detached-panel" style="display:none;background:#fff;border-top:1px solid var(--card-border);padding:16px 18px;max-height:340px;overflow-y:auto">
+          <div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#1A56DB"><i class="bi bi-shield-lock"></i> Ký số bằng phần mềm VGCA (Ban Cơ yếu) — ký rời</div>
+          <div style="display:grid;grid-template-columns:1fr;gap:14px;font-size:13px">
+
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span class="sw-dstep-num">1</span>
+              <div style="flex:1">
+                <div style="font-weight:600;margin-bottom:4px">Tải PDF gốc về máy</div>
+                <button class="btn-outline-custom" id="sw-dl-original" style="padding:6px 12px"><i class="bi bi-download"></i> Tải PDF gốc</button>
+                <div id="sw-orig-hash" style="font-size:11px;color:var(--text-muted);margin-top:6px;word-break:break-all"></div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span class="sw-dstep-num">2</span>
+              <div style="flex:1">
+                <div style="font-weight:600;margin-bottom:4px">Ký bằng phần mềm VGCA trên máy</div>
+                <div style="color:var(--text-secondary);line-height:1.7">
+                  Mở <strong>Phần mềm ký số VGCA (Ban Cơ yếu)</strong> → cắm USB Token → mở file PDF vừa tải →
+                  chọn chứng thư số → ký (nhập mã PIN) → <strong>lưu file PDF đã ký</strong>.
+                  Có thể dùng phần mềm khác hỗ trợ ký PDF chuẩn PAdES (Foxit, Adobe…).
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span class="sw-dstep-num">3</span>
+              <div style="flex:1">
+                <div style="font-weight:600;margin-bottom:6px">Upload PDF đã ký để xác minh &amp; lưu</div>
+                <input type="file" id="sw-signed-input" accept=".pdf" style="font-size:13px;margin-bottom:8px">
+                <div>
+                  <button class="btn-primary-custom" id="sw-upload-signed" style="padding:7px 16px" disabled><i class="bi bi-cloud-upload"></i> Xác minh &amp; Hoàn tất ký</button>
+                  <button class="btn-outline-custom" id="sw-detached-cancel" style="padding:7px 14px;margin-left:6px">Đóng</button>
+                </div>
+                <div id="sw-detached-result" style="margin-top:12px;font-size:12.5px"></div>
+              </div>
+            </div>
+
+          </div>
         </div>
 
         <!-- Sign mode banner -->
@@ -693,6 +736,7 @@
   .sw-step { font-size:11.5px; padding:4px 10px; border-radius:99px; background:#F3F4F6; color:#9CA3AF; }
   .sw-step.active { background:#EBF5FF; color:#1A56DB; font-weight:600; }
   .sw-step.done { background:#ECFDF5; color:#059669; }
+  .sw-dstep-num { flex:0 0 26px; width:26px; height:26px; border-radius:50%; background:#EBF5FF; color:#1A56DB; font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; }
 
   .tp-step { color:#9CA3AF; }
   .tp-step.active { color:#1A56DB; font-weight:500; }
