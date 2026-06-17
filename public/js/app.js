@@ -582,7 +582,7 @@
     if (e.target.id === 'nd-project') {
       const pid = e.target.value;
       const sel = $('#nd-phase');
-      if (!pid) { sel.disabled = true; sel.innerHTML = '<option value="">— Chọn giai đoạn —</option>'; return; }
+      if (!pid) { sel.disabled = true; sel.innerHTML = '<option value="">— Hãy chọn dự án trước —</option>'; return; }
       sel.disabled = true;
       sel.innerHTML = '<option>Đang tải…</option>';
       const r = await _fetchAuth(`/api/projects/${pid}/phases`);
