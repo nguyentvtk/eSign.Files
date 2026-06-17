@@ -50,6 +50,13 @@ function getDb() {
     // libsql có thể trả về _metadata trong row — strip để response sạch
     _wrapPrepareToStripMetadata(_db);
 
+    // Remote Turso: interactive transaction qua Hrana KHÔNG ổn định — báo
+    // "cannot rollback - no transaction is active" với batch lớn (vd import 20
+    // dự án × phases) → rollback toàn bộ. Mỗi statement trên remote tự autocommit
+    // nên thay db.transaction(fn) bằng chạy fn trực tiếp (tuần tự). Mất tính
+    // atomic nhưng các thao tác đều idempotent (dedup theo mã) → an toàn.
+    if (isCloud) _patchTransactionForRemote(_db);
+
     // Apply schema chỉ 1 lần / cold start
     if (!_schemaApplied) {
       try {
@@ -99,6 +106,26 @@ function _migrate(db) {
   } catch (e) {
     console.error('[migrate] failed:', e.message);
   }
+}
+
+/**
+ * Thay db.transaction(fn) trên remote Turso bằng bản chạy fn trực tiếp.
+ * Hrana không hỗ trợ tốt interactive transaction (BEGIN/COMMIT) qua HTTP →
+ * batch lớn lỗi "cannot rollback - no transaction is active". Vì mỗi statement
+ * tự autocommit, chạy tuần tự vẫn ghi đủ. Giữ nguyên API better-sqlite3
+ * (tx(), tx.default/.deferred/.immediate/.exclusive) để mọi call site dùng như cũ.
+ */
+function _patchTransactionForRemote(db) {
+  if (db.__txPatched) return;
+  db.transaction = (fn) => {
+    const wrapped = (...args) => fn(...args);
+    wrapped.default = wrapped;
+    wrapped.deferred = wrapped;
+    wrapped.immediate = wrapped;
+    wrapped.exclusive = wrapped;
+    return wrapped;
+  };
+  db.__txPatched = true;
 }
 
 /**
