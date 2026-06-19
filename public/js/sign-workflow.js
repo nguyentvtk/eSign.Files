@@ -201,6 +201,11 @@ window.SignWorkflow = (() => {
     $('#sw-canvas-wrapper').classList.add('sig-mode');
     $('#sw-sig-banner').style.display = 'block';
     $('#sw-attach-panel').style.display = 'none';
+    // Cho chọn nhà cung cấp (mặc định VGCA — hoạt động không cần license)
+    const sel = $('#sw-provider');
+    if (sel) { sel.style.display = 'inline-block'; sel.value = _selectedProvider; }
+    if (window.UsbTokenSigner) window.UsbTokenSigner.setProvider(_selectedProvider);
+    _updateProviderNote();
     _setStep(3);
   }
 
@@ -209,6 +214,8 @@ window.SignWorkflow = (() => {
     _sigBox = null;
     $('#sw-canvas-wrapper').classList.remove('sig-mode');
     $('#sw-sig-banner').style.display = 'none';
+    if ($('#sw-provider')) $('#sw-provider').style.display = 'none';
+    if ($('#sw-provider-note')) $('#sw-provider-note').style.display = 'none';
     document.querySelectorAll('.sw-sig-box').forEach(el => el.remove());
     $('#sw-confirm-sign').disabled = true;
     _setStep(1);
@@ -233,7 +240,46 @@ window.SignWorkflow = (() => {
 
   /* ─── USB Token Real Signing ─────────────────────────── */
   let _signResult = null;
-  let _selectedProvider = 'vnpt';
+  let _selectedProvider = 'vgca';
+
+  // Cache trạng thái cấu hình license VNPT (rỗng = chưa cấu hình → chưa ký được)
+  let _vnptLicenseConfigured = null;
+  async function _isVnptLicenseConfigured() {
+    if (_vnptLicenseConfigured !== null) return _vnptLicenseConfigured;
+    try {
+      const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+      const r = await fetch('/api/signing/vnpt-config', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+      const d = await r.json();
+      _vnptLicenseConfigured = !!(d && d.success && d.data && d.data.license);
+    } catch { _vnptLicenseConfigured = false; }
+    return _vnptLicenseConfigured;
+  }
+
+  // Hiện/ẩn cảnh báo theo nhà cung cấp đang chọn; khóa nút ký nếu VNPT chưa có license
+  async function _updateProviderNote() {
+    const note = $('#sw-provider-note');
+    const signBtn = $('#sw-confirm-sign');
+    if (!note) return;
+    let warn = '';
+    let block = false;
+    if (_selectedProvider === 'vnpt') {
+      const ok = await _isVnptLicenseConfigured();
+      if (!ok) {
+        warn = '⚠ VNPT-CA cần license cấp cho tên miền này. Hãy dùng VGCA hoặc liên hệ VNPT-CA.';
+        block = true;
+      }
+    } else if (['viettel', 'bkav', 'fpt'].includes(_selectedProvider)) {
+      warn = 'ℹ Nhà cung cấp thử nghiệm — chưa hỗ trợ ký thật.';
+    }
+    note.textContent = warn;
+    note.style.display = warn ? 'inline-block' : 'none';
+    if (signBtn) {
+      signBtn.disabled = block;
+      signBtn.title = block ? 'VNPT-CA chưa cấu hình license cho tên miền này' : '';
+      signBtn.style.opacity = block ? '0.5' : '';
+      signBtn.style.cursor = block ? 'not-allowed' : '';
+    }
+  }
 
   async function _signWithToken() {
     if (!_sigBox) { window.Toast?.warning('Chưa đặt vị trí chữ ký.'); return; }
@@ -471,6 +517,7 @@ window.SignWorkflow = (() => {
     $('#sw-provider')?.addEventListener('change', (e) => {
       _selectedProvider = e.target.value;
       if (window.UsbTokenSigner) window.UsbTokenSigner.setProvider(_selectedProvider);
+      _updateProviderNote();
     });
     $('#sw-enter-sign-mode')?.addEventListener('click', _enterSignMode);
     $('#sw-cancel-sign-mode')?.addEventListener('click', _exitSignMode);
@@ -562,6 +609,7 @@ window.SignWorkflow = (() => {
           height: h,
         };
         $('#sw-confirm-sign').disabled = false;
+        _updateProviderNote(); // giữ khóa nếu VNPT chưa có license
         window.Toast?.success('Đã đặt vị trí chữ ký. Bấm "Hoàn thành & Ký" để tiếp tục.');
       });
     }

@@ -623,12 +623,13 @@
             <input type="file" id="sw-replace-input" accept=".pdf" style="display:none">
             <button class="btn-primary-custom" id="sw-detached-sign" title="Ký bằng phần mềm desktop (VGCA Ban Cơ yếu…) rồi upload lại"><i class="bi bi-shield-lock"></i> Ký rời (VGCA)</button>
             <select id="sw-provider" class="nd-input" style="width:auto;padding:6px 30px 6px 10px;font-size:13px;display:none" title="Nhà cung cấp USB Token">
-              <option value="vnpt">VNPT-CA</option>
               <option value="vgca">VGCA (Ban Cơ yếu)</option>
-              <option value="viettel">Viettel-CA</option>
-              <option value="bkav">BKAV-CA</option>
-              <option value="fpt">FPT-CA</option>
+              <option value="vnpt">VNPT-CA</option>
+              <option value="viettel">Viettel-CA (thử nghiệm)</option>
+              <option value="bkav">BKAV-CA (thử nghiệm)</option>
+              <option value="fpt">FPT-CA (thử nghiệm)</option>
             </select>
+            <span id="sw-provider-note" style="display:none;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:4px 8px;align-self:center"></span>
             <button class="btn-outline-custom" id="sw-enter-sign-mode" title="Ký qua middleware USB Token cục bộ (thử nghiệm)"><i class="bi bi-usb-drive"></i> USB Token</button>
             <button class="btn-doc-action reject" id="sw-reject" style="min-height:auto"><i class="bi bi-x-circle"></i> Từ chối</button>
           </div>
