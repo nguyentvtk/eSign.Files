@@ -22,8 +22,8 @@ window.UsbTokenSigner = (() => {
 
   /* ── Cấu hình Middleware endpoints ────────────────────── */
   const PROVIDERS = {
-    vnpt: { ws: 'ws://127.0.0.1:9000', http: 'http://127.0.0.1:8080', name: 'VNPT-CA', icon: 'bi-shield-check' },
-    vgca: { ws: 'ws://127.0.0.1:9090', http: 'http://127.0.0.1:9090', name: 'VGCA (Ban Cơ yếu)', icon: 'bi-shield-lock' },
+    vnpt: { ws: 'wss://127.0.0.1:4433/plugin', http: 'http://127.0.0.1:8080', name: 'VNPT-CA', icon: 'bi-shield-check' },
+    vgca: { ws: 'wss://localhost:8987', http: 'https://localhost:8987', name: 'VGCA (Ban Cơ yếu)', icon: 'bi-shield-lock' },
     viettel: { ws: 'ws://127.0.0.1:9001', http: 'http://127.0.0.1:8081', name: 'Viettel-CA', icon: 'bi-shield' },
     bkav: { ws: 'ws://127.0.0.1:9002', http: 'http://127.0.0.1:8082', name: 'BKAV-CA', icon: 'bi-shield-fill' },
     fpt: { ws: 'ws://127.0.0.1:9003', http: 'http://127.0.0.1:8083', name: 'FPT-CA', icon: 'bi-shield-fill-check' },
@@ -105,6 +105,18 @@ window.UsbTokenSigner = (() => {
     _certInfo = null;
     _onProgress = onProgress;
 
+    // ── VNPT-CA Plugin: dùng thư viện vnpt-plugin.js chính thức (giao thức thật,
+    //    wss://localhost:4433/plugin). Trả về PDF đã ký PAdES thật → server verify. ──
+    if (_provider === 'vnpt') {
+      return _signWithVnptPlugin({ pdfBase64, coordinates, meta });
+    }
+
+    // ── VGCA SignService (Ban Cơ yếu): server-mediated, tool tự upload file đã ký
+    //    lên server ta → file đã được lưu & verify khi callback trả về. ──
+    if (_provider === 'vgca') {
+      return _signWithVgcaPlugin({ meta });
+    }
+
     _emit('connecting', 5, 'Kết nối Middleware…');
 
     const transport = await _connectMiddleware();
@@ -133,6 +145,220 @@ window.UsbTokenSigner = (() => {
     _activeTransport = null;
 
     return { signedBase64, cert };
+  }
+
+  /* ── VNPT-CA Plugin (thư viện vnpt-plugin.js chính thức) ─────────────────
+     Plugin chạy nền tại wss://localhost:4433/plugin. Website phải nằm trong
+     whitelist domainConfig.txt của máy client (vd e-sign-files.vercel.app).
+     signPdf(base64, null, pdfSigner) → Promise resolve chuỗi JSON
+       { "code":0, "data":"<base64 PDF đã ký>", "error":"" }
+     code 0 = OK, 11 = người dùng huỷ. Các mã khác = lỗi.
+  ──────────────────────────────────────────────────────────────────────── */
+  async function _signWithVnptPlugin({ pdfBase64, coordinates, meta = {} }) {
+    const vp = window.vnpt_plugin;
+    if (!vp || typeof vp.signPdf !== 'function') {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vnpt.name;
+      throw err;
+    }
+
+    _emit('connecting', 8, 'Kiểm tra VNPT-CA Plugin…');
+    let ready;
+    try {
+      ready = await vp.checkPlugin(null);
+    } catch (e) {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vnpt.name;
+      throw err;
+    }
+    if (String(ready) !== '1') {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vnpt.name;
+      throw err;
+    }
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    // ── Cài license cho plugin (BẮT BUỘC để đọc cert & ký). License là chuỗi XML
+    //    do VNPT-CA cấp, gắn với domain gọi (vd e-sign-files.vercel.app). Lưu ở env
+    //    VNPT_PLUGIN_LICENSE phía server, frontend lấy qua /api/signing/vnpt-config. ──
+    const license = await _getVnptLicense();
+    if (license) {
+      _emit('connecting', 20, 'Cài đặt license VNPT-CA Plugin…');
+      let licRes;
+      try { licRes = JSON.parse(await vp.setLicenseKey(license, null)); } catch { licRes = null; }
+      if (!licRes || (licRes.code !== 1 && licRes.code !== 0)) {
+        throw new Error('License VNPT-CA Plugin không hợp lệ cho tên miền này: '
+          + (licRes && licRes.error ? licRes.error : 'the license not correspond')
+          + '. Cần xin license VNPT-CA cấp cho ' + location.hostname + '.');
+      }
+    } else {
+      throw new Error('Chưa cấu hình license VNPT-CA Plugin. '
+        + 'Đặt biến môi trường VNPT_PLUGIN_LICENSE (license do VNPT-CA cấp cho '
+        + location.hostname + ') rồi thử lại.');
+    }
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    // Toạ độ ký: coordinates[] dùng gốc bottom-left (điểm PDF) — khớp llx/lly/urx/ury
+    const c = (coordinates && coordinates[0]) || null;
+    const pdfSigner = {
+      Signer: meta.signerName || '',
+      Description: meta.maDoc ? `Ký số: ${meta.maDoc}` : '',
+      SigningTime: _formatVnptTime(new Date()),
+    };
+    if (c) {
+      pdfSigner.page = c.page || 1;
+      pdfSigner.llx = Math.round(c.xPt);
+      pdfSigner.lly = Math.round(c.yPt);
+      pdfSigner.urx = Math.round(c.xPt + c.wPt);
+      pdfSigner.ury = Math.round(c.yPt + c.hPt);
+    }
+
+    _emit('pin', 45, 'Chọn chứng thư & nhập mã PIN trên cửa sổ VNPT-CA Plugin…');
+    _emit('signing', 60, 'Đang ký số tài liệu bằng USB Token…');
+
+    let resStr;
+    try {
+      resStr = await vp.signPdf(pdfBase64, null, pdfSigner);
+    } catch (e) {
+      throw new Error('VNPT-CA Plugin lỗi khi ký: ' + (e && e.message ? e.message : e));
+    }
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    let res;
+    try { res = JSON.parse(resStr); } catch { throw new Error('Không đọc được kết quả từ VNPT-CA Plugin.'); }
+
+    if (res.code === 11) throw new Error('USER_CANCELLED');
+    if (res.code !== 0 || !res.data) {
+      throw new Error(_vnptErrorText(res.code, res.error));
+    }
+
+    _emit('success', 100, 'Ký số VNPT-CA thành công!');
+    // realSigned = true → sign-workflow sẽ gửi PDF này lên /upload-signed để server XÁC MINH
+    return { signedBase64: res.data, cert: null, realSigned: true, provider: 'vnpt' };
+  }
+
+  /* ── VGCA SignService (Ban Cơ yếu Chính phủ) ─────────────────────────────
+     Tool chạy nền tại wss://127.0.0.1:8987. vgca_sign_approved(prms, cb) gửi
+     { FileUploadHandler, FileName } cho tool; tool tải file chưa ký, ký (chọn
+     cert + PIN + dấu theo mẫu cấu hình trong tool), rồi UPLOAD file đã ký lên
+     FileUploadHandler (server ta verify + lưu). Callback trả { Status, FileServer }.
+     Vị trí/ảnh dấu do tool quyết định theo mẫu chữ ký (tên lãnh đạo) — KHÔNG
+     dùng toạ độ kéo-thả. Không cần license domain.
+  ──────────────────────────────────────────────────────────────────────── */
+  async function _signWithVgcaPlugin({ meta = {} }) {
+    if (typeof window.vgca_sign_approved !== 'function') {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vgca.name;
+      throw err;
+    }
+    const documentId = meta.documentId;
+    if (!documentId) throw new Error('Thiếu documentId cho luồng ký VGCA.');
+
+    // Preflight: kiểm tra tool đang chạy (wss://127.0.0.1:8987)
+    _emit('connecting', 10, 'Kiểm tra VGCA SignService…');
+    const ver = await _vgcaCall(window.vgca_get_version, 6000).catch(() => null);
+    if (!ver) {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vgca.name;
+      throw err;
+    }
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    // Xin signToken + URL từ server
+    _emit('connecting', 25, 'Khởi tạo phiên ký VGCA…');
+    const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+    const pr = await fetch('/api/signing/vgca/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ document_id: documentId }),
+    }).then(r => r.json());
+    if (!pr.success) throw new Error(pr.error || 'Không khởi tạo được phiên ký VGCA.');
+
+    const prms = {
+      FileUploadHandler: pr.data.fileUploadHandler,
+      FileName: pr.data.fileName,
+      SessionId: '',
+      JWTToken: '',
+    };
+
+    _emit('pin', 45, 'Chọn chứng thư & nhập mã PIN trên cửa sổ VGCA SignService…');
+    _emit('signing', 65, 'Tool đang tải, ký & nộp lại tài liệu…');
+
+    // vgca_sign_approved(prmsJson, callback) — callback nhận chuỗi JSON kết quả
+    const rvStr = await new Promise((resolve, reject) => {
+      let settled = false;
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('VGCA SignService không phản hồi (quá thời gian).')); } }, 180000);
+      try {
+        window.vgca_sign_approved(JSON.stringify(prms), (rv) => {
+          if (settled) return; settled = true; clearTimeout(to); resolve(rv);
+        });
+      } catch (e) { if (!settled) { settled = true; clearTimeout(to); reject(e); } }
+    });
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    let rv;
+    try { rv = JSON.parse(rvStr); } catch { throw new Error('Không đọc được kết quả từ VGCA SignService.'); }
+    if (Number(rv.Status) !== 0) {
+      throw new Error(rv.Message || 'Ký VGCA thất bại hoặc người dùng huỷ.');
+    }
+    // Tool báo Status 0 = ký cục bộ thành công, NHƯNG nếu FileServer rỗng nghĩa là
+    // bước nộp/lưu lên server ta thất bại (vd verify lỗi). FileServer có giá trị mới
+    // là tín hiệu server đã lưu file đã ký.
+    if (!rv.FileServer) {
+      throw new Error('Ký thành công nhưng máy chủ không lưu được file đã ký (kiểm tra xác minh chữ ký / kết nối). ' + (rv.Message || ''));
+    }
+
+    _emit('success', 100, 'Ký số VGCA thành công!');
+    // File đã được tool upload + server verify & lưu trong lúc ký → không cần gửi lại
+    return { signedBase64: null, cert: null, alreadyStored: true, provider: 'vgca', serverData: rv };
+  }
+
+  // Gọi 1 hàm vgcaplugin nhận (callback) → Promise, kèm timeout
+  function _vgcaCall(fn, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('timeout')); } }, timeoutMs);
+      try {
+        fn((rv) => { if (!settled) { settled = true; clearTimeout(to); resolve(rv); } });
+      } catch (e) { if (!settled) { settled = true; clearTimeout(to); reject(e); } }
+    });
+  }
+
+  let _vnptLicenseCache;
+  async function _getVnptLicense() {
+    if (_vnptLicenseCache !== undefined) return _vnptLicenseCache;
+    try {
+      const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+      const r = await fetch('/api/signing/vnpt-config', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+      const d = await r.json();
+      _vnptLicenseCache = (d && d.success && d.data && d.data.license) ? d.data.license : '';
+    } catch { _vnptLicenseCache = ''; }
+    return _vnptLicenseCache;
+  }
+
+  function _formatVnptTime(d) {
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+  }
+
+  function _vnptErrorText(code, error) {
+    const MAP = {
+      1: 'Dữ liệu đầu vào rỗng hoặc không đúng định dạng.',
+      2: 'Không tìm thấy chứng thư số. Hãy cắm USB Token.',
+      3: 'Ký thất bại.',
+      4: 'Không tìm thấy private key trên token.',
+      5: 'Lỗi không xác định.',
+      6: 'Thiếu tham số số trang.',
+      7: 'Trang đặt chữ ký không hợp lệ.',
+      8: 'Không tìm thấy thẻ ký số.',
+      10: 'Dữ liệu chứa chữ ký không hợp lệ.',
+    };
+    return (MAP[code] || ('Mã lỗi ' + code)) + (error ? ` (${error})` : '');
   }
 
   function _emit(phase, percent, message) {

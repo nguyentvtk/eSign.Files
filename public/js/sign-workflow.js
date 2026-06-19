@@ -201,6 +201,11 @@ window.SignWorkflow = (() => {
     $('#sw-canvas-wrapper').classList.add('sig-mode');
     $('#sw-sig-banner').style.display = 'block';
     $('#sw-attach-panel').style.display = 'none';
+    // Cho chọn nhà cung cấp (mặc định VGCA — hoạt động không cần license)
+    const sel = $('#sw-provider');
+    if (sel) { sel.style.display = 'inline-block'; sel.value = _selectedProvider; }
+    if (window.UsbTokenSigner) window.UsbTokenSigner.setProvider(_selectedProvider);
+    _updateProviderNote();
     _setStep(3);
   }
 
@@ -209,6 +214,8 @@ window.SignWorkflow = (() => {
     _sigBox = null;
     $('#sw-canvas-wrapper').classList.remove('sig-mode');
     $('#sw-sig-banner').style.display = 'none';
+    if ($('#sw-provider')) $('#sw-provider').style.display = 'none';
+    if ($('#sw-provider-note')) $('#sw-provider-note').style.display = 'none';
     document.querySelectorAll('.sw-sig-box').forEach(el => el.remove());
     $('#sw-confirm-sign').disabled = true;
     _setStep(1);
@@ -233,7 +240,46 @@ window.SignWorkflow = (() => {
 
   /* ─── USB Token Real Signing ─────────────────────────── */
   let _signResult = null;
-  let _selectedProvider = 'vnpt';
+  let _selectedProvider = 'vgca';
+
+  // Cache trạng thái cấu hình license VNPT (rỗng = chưa cấu hình → chưa ký được)
+  let _vnptLicenseConfigured = null;
+  async function _isVnptLicenseConfigured() {
+    if (_vnptLicenseConfigured !== null) return _vnptLicenseConfigured;
+    try {
+      const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+      const r = await fetch('/api/signing/vnpt-config', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+      const d = await r.json();
+      _vnptLicenseConfigured = !!(d && d.success && d.data && d.data.license);
+    } catch { _vnptLicenseConfigured = false; }
+    return _vnptLicenseConfigured;
+  }
+
+  // Hiện/ẩn cảnh báo theo nhà cung cấp đang chọn; khóa nút ký nếu VNPT chưa có license
+  async function _updateProviderNote() {
+    const note = $('#sw-provider-note');
+    const signBtn = $('#sw-confirm-sign');
+    if (!note) return;
+    let warn = '';
+    let block = false;
+    if (_selectedProvider === 'vnpt') {
+      const ok = await _isVnptLicenseConfigured();
+      if (!ok) {
+        warn = '⚠ VNPT-CA cần license cấp cho tên miền này. Hãy dùng VGCA hoặc liên hệ VNPT-CA.';
+        block = true;
+      }
+    } else if (['viettel', 'bkav', 'fpt'].includes(_selectedProvider)) {
+      warn = 'ℹ Nhà cung cấp thử nghiệm — chưa hỗ trợ ký thật.';
+    }
+    note.textContent = warn;
+    note.style.display = warn ? 'inline-block' : 'none';
+    if (signBtn) {
+      signBtn.disabled = block;
+      signBtn.title = block ? 'VNPT-CA chưa cấu hình license cho tên miền này' : '';
+      signBtn.style.opacity = block ? '0.5' : '';
+      signBtn.style.cursor = block ? 'not-allowed' : '';
+    }
+  }
 
   async function _signWithToken() {
     if (!_sigBox) { window.Toast?.warning('Chưa đặt vị trí chữ ký.'); return; }
@@ -324,6 +370,7 @@ window.SignWorkflow = (() => {
         signerName: user.ho_ten || '',
         signerEmail: user.email || '',
         fileId: _doc.id,
+        documentId: _doc.id, // dùng cho luồng VGCA (server-mediated)
       };
 
       let result;
@@ -339,13 +386,23 @@ window.SignWorkflow = (() => {
         result = { signedBase64: null, cert: null };
       }
 
-      // 4. Gửi lên server để lưu chữ ký + stamp + cập nhật DB
-      _renderPhase('signing', 85, 'Lưu chữ ký lên server…');
-      const apiResult = await _callSignApi({
-        cert: result.cert,
-        signature_value: result.signedBase64 ? result.signedBase64.substring(0, 200) : '',
-        stamp_position: { page: _sigBox.page, x: pdfX, y: pdfY, width: pdfW, height: pdfH },
-      });
+      // 4a. VGCA: tool đã upload file đã ký lên server (FileUploadHandler) và server
+      //     đã verify + lưu trong lúc ký → không cần gửi lại, chỉ hiển thị thành công.
+      let apiResult;
+      if (result.alreadyStored) {
+        apiResult = { success: true, data: result.serverData || {} };
+      } else if (result.realSigned && result.signedBase64) {
+        _renderPhase('signing', 85, 'Xác minh chữ ký số trên server…');
+        apiResult = await _uploadSignedBase64(result.signedBase64);
+      } else {
+        // 4b. Luồng cũ (stamp phía server) — middleware thử nghiệm / fallback
+        _renderPhase('signing', 85, 'Lưu chữ ký lên server…');
+        apiResult = await _callSignApi({
+          cert: result.cert,
+          signature_value: result.signedBase64 ? result.signedBase64.substring(0, 200) : '',
+          stamp_position: { page: _sigBox.page, x: pdfX, y: pdfY, width: pdfW, height: pdfH },
+        });
+      }
 
       if (!apiResult.success) {
         _renderError(apiResult.error || 'Lỗi không xác định');
@@ -418,6 +475,29 @@ window.SignWorkflow = (() => {
     return resp.json();
   }
 
+  // PDF đã ký THẬT (base64) từ plugin → upload lên /upload-signed để server xác minh
+  // chữ ký số nhúng (PKCS#7/PAdES) + chuỗi tin cậy, rồi lưu nguyên trạng (không stamp đè).
+  async function _uploadSignedBase64(signedBase64) {
+    const bin = atob(signedBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+
+    const fd = new FormData();
+    fd.append('document_id', _doc.id);
+    fd.append('signed_file', blob, `${_doc.ma_doc || 'tai-lieu'}_signed.pdf`);
+    const otp = await _maybePromptOtp();
+    if (otp) fd.append('otp_token', otp);
+
+    const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+    const resp = await fetch('/api/signing/upload-signed', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd,
+    });
+    return resp.json();
+  }
+
   /* ─── Event Bindings ─── */
   document.addEventListener('DOMContentLoaded', () => {
     $('#sw-prev-page')?.addEventListener('click', () => { if (_currentPage > 1) { _currentPage--; $('#sw-page-input').value = _currentPage; _renderPage(_currentPage); } });
@@ -437,6 +517,7 @@ window.SignWorkflow = (() => {
     $('#sw-provider')?.addEventListener('change', (e) => {
       _selectedProvider = e.target.value;
       if (window.UsbTokenSigner) window.UsbTokenSigner.setProvider(_selectedProvider);
+      _updateProviderNote();
     });
     $('#sw-enter-sign-mode')?.addEventListener('click', _enterSignMode);
     $('#sw-cancel-sign-mode')?.addEventListener('click', _exitSignMode);
@@ -528,6 +609,7 @@ window.SignWorkflow = (() => {
           height: h,
         };
         $('#sw-confirm-sign').disabled = false;
+        _updateProviderNote(); // giữ khóa nếu VNPT chưa có license
         window.Toast?.success('Đã đặt vị trí chữ ký. Bấm "Hoàn thành & Ký" để tiếp tục.');
       });
     }

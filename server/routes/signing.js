@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const config = require('../config');
 const { getDb } = require('../db/database');
@@ -32,6 +33,107 @@ const signedUpload = multer({
     cb(null, true);
   },
 }).single('signed_file');
+
+// ── Helper dùng chung: XÁC MINH chữ ký số nhúng + lưu file đã ký nguyên trạng ──
+// Dùng cho cả /upload-signed (ký rời thủ công) và /vgca/upload (tool VGCA tự upload).
+// Trả { ok, httpStatus, body }. KHÔNG tự xoá tmpPath (caller tự cleanup).
+async function storeVerifiedSignedPdf({ tmpPath, doc, req, otpVerified, method, methodLabel }) {
+  const db = getDb();
+
+  // XÁC MINH chữ ký số nhúng (PKCS#7/PAdES)
+  const verifyResult = verifyPdfBuffer(fs.readFileSync(tmpPath));
+  if (!verifyResult.valid) {
+    auditLog.log({
+      userId: req.user.id, userEmail: req.user.email, action: 'SIGN_VERIFY_FAILED',
+      targetType: 'document', targetId: doc.ma_doc,
+      detail: { reason: verifyResult.reason, signatureCount: verifyResult.signatureCount },
+      ip: req.ip, userAgent: req.get('user-agent'),
+    });
+    return { ok: false, httpStatus: 400, body: {
+      success: false,
+      error: 'Chữ ký số không hợp lệ: ' + (verifyResult.reason || 'không xác minh được.'),
+      detail: { contentIntegrity: verifyResult.contentIntegrity, cryptoVerified: verifyResult.cryptoVerified },
+    }};
+  }
+
+  // Bắt buộc chuỗi chứng thư neo vào Root CA tin cậy (VGCA). Nới lỏng bằng ALLOW_UNTRUSTED_CA=1.
+  const allowUntrusted = process.env.ALLOW_UNTRUSTED_CA === '1';
+  if (verifyResult.trustConfigured && !verifyResult.trusted && !allowUntrusted) {
+    auditLog.log({
+      userId: req.user.id, userEmail: req.user.email, action: 'SIGN_CHAIN_UNTRUSTED',
+      targetType: 'document', targetId: doc.ma_doc,
+      detail: { reason: verifyResult.chainReason, chain: verifyResult.chain },
+      ip: req.ip, userAgent: req.get('user-agent'),
+    });
+    return { ok: false, httpStatus: 400, body: {
+      success: false,
+      error: 'Chứng thư không thuộc chuỗi tin cậy: ' + (verifyResult.chainReason || 'không neo vào Root CA tin cậy.'),
+      detail: { chain: verifyResult.chain },
+    }};
+  }
+
+  const certInfo = verifyResult.signer || {};
+  const signerName = certInfo.subject ? getSignerName(certInfo) : req.user.ho_ten;
+  const signedAt = verifyResult.signingTime || new Date().toISOString();
+
+  // Upload file đã ký NGUYÊN TRẠNG lên Dropbox (không stamp đè để giữ chữ ký hợp lệ)
+  let signedFileUrl;
+  const uploaded = await dropbox.uploadFile(tmpPath, `${doc.ma_doc}_signed.pdf`, `${doc.ma_doc}_da-ky`);
+  signedFileUrl = uploaded.url;
+  console.log(`[${methodLabel}] Uploaded signed file:`, signedFileUrl);
+
+  db.prepare(`INSERT INTO signatures
+    (document_id, signer_id, certificate_subject, certificate_serial, certificate_issuer,
+     certificate_valid_from, certificate_valid_to, signature_algorithm, document_hash_at_sign,
+     signature_value, sign_method, signed_at, ip_address, user_agent, otp_verified)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    doc.id, req.user.id,
+    certInfo.subject || '', certInfo.serial || '', certInfo.issuer || '',
+    certInfo.validFrom || '', certInfo.validTo || '',
+    certInfo.algorithm || 'SHA256withRSA', doc.file_hash_sha256,
+    `PAdES detached | integrity=${verifyResult.contentIntegrity} crypto=${verifyResult.cryptoVerified} trusted=${verifyResult.trusted} | anchor=${verifyResult.trustAnchor || 'N/A'} | sigs=${verifyResult.signatureCount}`,
+    method, signedAt,
+    req.ip, req.get('user-agent') || '', otpVerified
+  );
+
+  db.prepare("UPDATE documents SET trang_thai = 'Đã ký', signed_file_url = ?, nguoi_ky_id = ?, ngay_ky = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(signedFileUrl, req.user.id, signedAt, doc.id);
+
+  auditLog.log({
+    userId: req.user.id, userEmail: req.user.email, action: 'DOCUMENT_APPROVED',
+    targetType: 'document', targetId: doc.ma_doc,
+    detail: { method: methodLabel, otpVerified, signerName, digestAlgorithm: verifyResult.digestAlgorithm },
+    ip: req.ip, userAgent: req.get('user-agent'),
+  });
+
+  try {
+    const notify = require('../services/notify');
+    const sender = db.prepare('SELECT ho_ten, email FROM users WHERE id = ?').get(doc.nguoi_tao_id);
+    notify.notifyDocumentSigned({ doc, sender, approver: req.user, status: 'Đã ký' })
+      .catch(e => console.error(`[Notify ${methodLabel}]`, e.message));
+  } catch (e) {}
+
+  // Cập nhật Google Sheets chạy NỀN (fire-and-forget): không chặn phản hồi — tool
+  // VGCA có timeout upload ngắn, nếu await GAS webhook (chậm) tool sẽ báo lỗi 0x0028
+  // dù server đã lưu xong.
+  Promise.resolve()
+    .then(() => sheetsData.updateDocumentStatus(doc.ma_doc, {
+      'Trạng thái': 'Đã ký', 'URL': signedFileUrl,
+      'Ghi chú': `Ký số (${methodLabel}) bởi ${signerName} lúc ${new Date(signedAt).toLocaleString('vi-VN')}`,
+    }))
+    .catch(e => console.error(`[sheets-data ${methodLabel}]`, e.message));
+
+  return { ok: true, httpStatus: 200, body: {
+    success: true,
+    data: {
+      ma_doc: doc.ma_doc, trang_thai: 'Đã ký', signed_file_url: signedFileUrl,
+      signer: signerName, signedAt,
+      certificate: certInfo, digestAlgorithm: verifyResult.digestAlgorithm,
+      trusted: verifyResult.trusted, trustAnchor: verifyResult.trustAnchor, chain: verifyResult.chain,
+    },
+  }};
+}
 
 // POST /signing/approve — Lãnh đạo phê duyệt (ký) tài liệu
 router.post('/approve', authenticate, requireRole('Admin', 'Quản lý'), async (req, res) => {
@@ -245,107 +347,12 @@ router.post('/upload-signed', authenticate, requireRole('Admin', 'Quản lý'), 
         otpVerified = 1;
       }
 
-      // ── XÁC MINH chữ ký số nhúng ──
-      const verifyResult = verifyPdfBuffer(fs.readFileSync(tmpPath));
-      if (!verifyResult.valid) {
-        auditLog.log({
-          userId: req.user.id, userEmail: req.user.email, action: 'SIGN_VERIFY_FAILED',
-          targetType: 'document', targetId: doc.ma_doc,
-          detail: { reason: verifyResult.reason, signatureCount: verifyResult.signatureCount },
-          ip: req.ip, userAgent: req.get('user-agent'),
-        });
-        cleanup();
-        return res.status(400).json({
-          success: false,
-          error: 'Chữ ký số không hợp lệ: ' + (verifyResult.reason || 'không xác minh được.'),
-          detail: { contentIntegrity: verifyResult.contentIntegrity, cryptoVerified: verifyResult.cryptoVerified },
-        });
-      }
-
-      // ── Bắt buộc chuỗi chứng thư neo vào Root CA tin cậy (VGCA) ──
-      // Có thể nới lỏng bằng env ALLOW_UNTRUSTED_CA=1 (môi trường dev / CA chưa nạp).
-      const allowUntrusted = process.env.ALLOW_UNTRUSTED_CA === '1';
-      if (verifyResult.trustConfigured && !verifyResult.trusted && !allowUntrusted) {
-        auditLog.log({
-          userId: req.user.id, userEmail: req.user.email, action: 'SIGN_CHAIN_UNTRUSTED',
-          targetType: 'document', targetId: doc.ma_doc,
-          detail: { reason: verifyResult.chainReason, chain: verifyResult.chain },
-          ip: req.ip, userAgent: req.get('user-agent'),
-        });
-        cleanup();
-        return res.status(400).json({
-          success: false,
-          error: 'Chứng thư không thuộc chuỗi tin cậy: ' + (verifyResult.chainReason || 'không neo vào Root CA tin cậy.'),
-          detail: { chain: verifyResult.chain },
-        });
-      }
-
-      const certInfo = verifyResult.signer || {};
-      const signerName = certInfo.subject ? getSignerName(certInfo) : req.user.ho_ten;
-      const signedAt = verifyResult.signingTime || new Date().toISOString();
-
-      // Upload file đã ký NGUYÊN TRẠNG lên Dropbox (không stamp đè để giữ chữ ký hợp lệ)
-      let signedFileUrl;
-      try {
-        const uploaded = await dropbox.uploadFile(tmpPath, `${doc.ma_doc}_signed.pdf`, `${doc.ma_doc}_da-ky`);
-        signedFileUrl = uploaded.url;
-        console.log('[SIGN-UPLOAD] Uploaded signed file:', signedFileUrl);
-      } catch (e) {
-        console.error('[SIGN-UPLOAD]', e);
-        cleanup();
-        return res.status(500).json({ success: false, error: 'Lỗi khi lưu file đã ký: ' + e.message });
-      }
-
-      // Lưu chữ ký với thông tin chứng thư THẬT trích từ file
-      db.prepare(`INSERT INTO signatures
-        (document_id, signer_id, certificate_subject, certificate_serial, certificate_issuer,
-         certificate_valid_from, certificate_valid_to, signature_algorithm, document_hash_at_sign,
-         signature_value, sign_method, signed_at, ip_address, user_agent, otp_verified)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        document_id, req.user.id,
-        certInfo.subject || '', certInfo.serial || '', certInfo.issuer || '',
-        certInfo.validFrom || '', certInfo.validTo || '',
-        certInfo.algorithm || 'SHA256withRSA', doc.file_hash_sha256,
-        `PAdES detached | integrity=${verifyResult.contentIntegrity} crypto=${verifyResult.cryptoVerified} trusted=${verifyResult.trusted} | anchor=${verifyResult.trustAnchor || 'N/A'} | sigs=${verifyResult.signatureCount}`,
-        'vgca_detached', signedAt,
-        req.ip, req.get('user-agent') || '', otpVerified
-      );
-
-      db.prepare("UPDATE documents SET trang_thai = 'Đã ký', signed_file_url = ?, nguoi_ky_id = ?, ngay_ky = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(signedFileUrl, req.user.id, signedAt, document_id);
-
-      auditLog.log({
-        userId: req.user.id, userEmail: req.user.email, action: 'DOCUMENT_APPROVED',
-        targetType: 'document', targetId: doc.ma_doc,
-        detail: { method: 'vgca_detached', otpVerified, signerName, digestAlgorithm: verifyResult.digestAlgorithm },
-        ip: req.ip, userAgent: req.get('user-agent'),
+      // ── XÁC MINH + lưu (dùng helper chung) ──
+      const result = await storeVerifiedSignedPdf({
+        tmpPath, doc, req, otpVerified, method: 'vgca', methodLabel: 'upload-signed',
       });
-
-      try {
-        const notify = require('../services/notify');
-        const sender = db.prepare('SELECT ho_ten, email FROM users WHERE id = ?').get(doc.nguoi_tao_id);
-        notify.notifyDocumentSigned({ doc, sender, approver: req.user, status: 'Đã ký' })
-          .catch(e => console.error('[Notify upload-signed]', e.message));
-      } catch (e) {}
-
-      try {
-        await sheetsData.updateDocumentStatus(doc.ma_doc, {
-          'Trạng thái': 'Đã ký', 'URL': signedFileUrl,
-          'Ghi chú': `Ký số (ký rời) bởi ${signerName} lúc ${new Date(signedAt).toLocaleString('vi-VN')}`,
-        });
-      } catch (e) { console.error('[sheets-data upload-signed]', e.message); }
-
       cleanup();
-      res.json({
-        success: true,
-        data: {
-          ma_doc: doc.ma_doc, trang_thai: 'Đã ký', signed_file_url: signedFileUrl,
-          signer: signerName, signedAt,
-          certificate: certInfo, digestAlgorithm: verifyResult.digestAlgorithm,
-          trusted: verifyResult.trusted, trustAnchor: verifyResult.trustAnchor, chain: verifyResult.chain,
-        },
-      });
+      return res.status(result.httpStatus).json(result.body);
     } catch (e) {
       console.error('[upload-signed]', e);
       cleanup();
@@ -402,6 +409,159 @@ router.get('/methods', authenticate, (req, res) => {
     methods.push({ id: 'remote', name: 'Remote Signing (Cloud CA)', available: true });
   }
   res.json({ success: true, data: methods });
+});
+
+// GET /signing/vnpt-config — Trả license VNPT-CA Plugin (cấu hình qua env VNPT_PLUGIN_LICENSE).
+// License là chuỗi XML do VNPT-CA cấp, gắn với tên miền (vd e-sign-files.vercel.app).
+// Bắt buộc phải set thì plugin mới cho đọc chứng thư & ký số trên trình duyệt.
+router.get('/vnpt-config', authenticate, (req, res) => {
+  res.json({ success: true, data: { license: process.env.VNPT_PLUGIN_LICENSE || '' } });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+   VGCA SignService (Ban Cơ yếu Chính phủ) — ký trực tiếp trên trình duyệt
+   ────────────────────────────────────────────────────────────────────────────
+   Mô hình server-mediated (khác VNPT): thư viện vgcaplugin.js gọi tool desktop
+   tại wss://127.0.0.1:8987/SignApproved với { FileUploadHandler, FileName }.
+   Tool TẢI file chưa ký từ FileName → ký (chọn cert + PIN + dấu theo mẫu cấu hình
+   trong tool theo tên lãnh đạo) → POST file đã ký (field 'uploadfile') lên
+   FileUploadHandler → ta xác minh + lưu, trả JSON { Status, FileServer } cho tool.
+
+   Xác thực: desktop tool không có session người dùng → ta nhúng signToken (JWT
+   ngắn hạn, scope 1 tài liệu) vào URL FileName & FileUploadHandler.
+   VGCA KHÔNG yêu cầu license domain như VNPT.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+// Base URL tuyệt đối để desktop tool truy cập (ưu tiên env cho Vercel/proxy)
+function getPublicBaseUrl(req) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, '');
+  return `${req.protocol}://${req.get('host')}`;
+}
+
+const VGCA_SIGN_PURPOSE = 'vgca-sign';
+function mintVgcaSignToken(documentId, userId) {
+  return jwt.sign({ documentId, userId, purpose: VGCA_SIGN_PURPOSE }, config.jwt.secret, { expiresIn: '20m' });
+}
+function verifyVgcaSignToken(t) {
+  try {
+    const p = jwt.verify(t, config.jwt.secret);
+    if (p.purpose !== VGCA_SIGN_PURPOSE) return null;
+    return p;
+  } catch { return null; }
+}
+
+// Tải nội dung PDF gốc (local hoặc Dropbox) → Buffer
+async function fetchOriginalPdfBuffer(doc) {
+  if (doc.file_url?.startsWith('/uploads')) {
+    const p = path.join(config.upload.dir, doc.file_url.replace('/uploads/', ''));
+    if (fs.existsSync(p)) return fs.readFileSync(p);
+  }
+  let downloadUrl = doc.file_url?.startsWith('http') ? doc.file_url : null;
+  if (!downloadUrl) return null;
+  try {
+    const u = new URL(downloadUrl);
+    if (/(^|\.)dropbox(usercontent)?\.com$/i.test(u.hostname)) { u.searchParams.set('dl', '1'); downloadUrl = u.toString(); }
+  } catch {}
+  const resp = await fetch(downloadUrl, { redirect: 'follow' });
+  if (!resp.ok) return null;
+  const buf = Buffer.from(await resp.arrayBuffer());
+  return buf.slice(0, 5).toString('latin1') === '%PDF-' ? buf : null;
+}
+
+// Multer nhận file tool VGCA upload lên (field 'uploadfile')
+const vgcaUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(config.upload.dir, 'temp');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => cb(null, Date.now() + '_vgca_signed.pdf'),
+  }),
+  limits: { fileSize: (config.upload.maxSizeMB || 25) * 1024 * 1024 },
+}).single('uploadfile');
+
+// POST /signing/vgca/prepare — Cấp signToken + URL cho 1 phiên ký VGCA
+router.post('/vgca/prepare', authenticate, requireRole('Admin', 'Quản lý'), (req, res) => {
+  const { document_id } = req.body;
+  if (!document_id) return res.status(400).json({ success: false, error: 'Thiếu document_id.' });
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(document_id);
+  if (!doc) return res.status(404).json({ success: false, error: 'Không tìm thấy tài liệu.' });
+  if (doc.trang_thai !== 'Chờ ký') return res.status(400).json({ success: false, error: 'Tài liệu không ở trạng thái "Chờ ký".' });
+
+  const signToken = mintVgcaSignToken(doc.id, req.user.id);
+  const base = getPublicBaseUrl(req);
+  res.json({
+    success: true,
+    data: {
+      fileName: `${base}/api/signing/vgca/source?t=${encodeURIComponent(signToken)}`,
+      fileUploadHandler: `${base}/api/signing/vgca/upload?t=${encodeURIComponent(signToken)}`,
+    },
+  });
+});
+
+// GET /signing/vgca/source — Tool desktop tải PDF CHƯA ký (xác thực bằng signToken)
+router.get('/vgca/source', async (req, res) => {
+  const p = verifyVgcaSignToken(req.query.t);
+  if (!p) return res.status(401).send('Invalid or expired sign token');
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(p.documentId);
+  if (!doc) return res.status(404).send('Document not found');
+  try {
+    const buf = await fetchOriginalPdfBuffer(doc);
+    if (!buf) return res.status(404).send('Original PDF not available');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${doc.ma_doc || 'document'}.pdf"`);
+    res.send(buf);
+  } catch (e) {
+    console.error('[vgca/source]', e.message);
+    res.status(500).send('Error fetching original PDF');
+  }
+});
+
+// POST /signing/vgca/upload — Tool desktop upload PDF ĐÃ ký (field 'uploadfile')
+// ⚠️ FileUploadHandler phải trả Status KIỂU BOOLEAN (true=OK, false=lỗi) — theo
+// đúng mẫu .NET của VGCA. Trả integer (0/1) khiến tool hiểu nhầm → lỗi 0x0028.
+//   { Status: true|false, Message, FileName, FileServer }
+router.post('/vgca/upload', (req, res) => {
+  const fail = (msg) => res.json({ Status: false, Message: msg, FileName: '', FileServer: '' });
+  const p = verifyVgcaSignToken(req.query.t);
+  if (!p) return fail('Invalid or expired sign token');
+
+  vgcaUpload(req, res, async (uploadErr) => {
+    const tmpPath = req.file?.path;
+    const cleanup = () => { try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {} };
+    try {
+      if (uploadErr) { cleanup(); return fail(uploadErr.message || 'Upload error'); }
+      if (!tmpPath) return fail('Chưa nhận được file đã ký (uploadfile).');
+
+      const db = getDb();
+      const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(p.documentId);
+      if (!doc) { cleanup(); return fail('Không tìm thấy tài liệu.'); }
+
+      // Dựng req.user từ signToken để tái dùng helper (tool không có session)
+      const signer = db.prepare('SELECT id, email, ho_ten FROM users WHERE id = ?').get(p.userId);
+      if (!signer) { cleanup(); return fail('Người ký không hợp lệ.'); }
+      const reqLike = { user: signer, ip: req.ip, get: (h) => req.get(h) };
+
+      const result = await storeVerifiedSignedPdf({
+        tmpPath, doc, req: reqLike, otpVerified: 0, method: 'vgca', methodLabel: 'vgca-signservice',
+      });
+      cleanup();
+
+      if (!result.ok) return fail(result.body.error || 'Xác minh chữ ký thất bại.');
+      return res.json({
+        Status: true, Message: '',
+        FileName: `${doc.ma_doc}.pdf`,
+        FileServer: result.body.data.signed_file_url,
+      });
+    } catch (e) {
+      console.error('[vgca/upload]', e);
+      cleanup();
+      return fail(e.message || 'Lỗi xử lý file đã ký.');
+    }
+  });
 });
 
 module.exports = router;
