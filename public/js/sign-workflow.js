@@ -324,6 +324,7 @@ window.SignWorkflow = (() => {
         signerName: user.ho_ten || '',
         signerEmail: user.email || '',
         fileId: _doc.id,
+        documentId: _doc.id, // dùng cho luồng VGCA (server-mediated)
       };
 
       let result;
@@ -339,10 +340,12 @@ window.SignWorkflow = (() => {
         result = { signedBase64: null, cert: null };
       }
 
-      // 4a. Ký THẬT (VNPT/VGCA plugin trả PDF đã ký PAdES) → gửi lên /upload-signed
-      //     để server XÁC MINH chữ ký số + chuỗi tin cậy rồi lưu nguyên trạng.
+      // 4a. VGCA: tool đã upload file đã ký lên server (FileUploadHandler) và server
+      //     đã verify + lưu trong lúc ký → không cần gửi lại, chỉ hiển thị thành công.
       let apiResult;
-      if (result.realSigned && result.signedBase64) {
+      if (result.alreadyStored) {
+        apiResult = { success: true, data: result.serverData || {} };
+      } else if (result.realSigned && result.signedBase64) {
         _renderPhase('signing', 85, 'Xác minh chữ ký số trên server…');
         apiResult = await _uploadSignedBase64(result.signedBase64);
       } else {

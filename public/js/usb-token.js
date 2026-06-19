@@ -111,6 +111,12 @@ window.UsbTokenSigner = (() => {
       return _signWithVnptPlugin({ pdfBase64, coordinates, meta });
     }
 
+    // ── VGCA SignService (Ban Cơ yếu): server-mediated, tool tự upload file đã ký
+    //    lên server ta → file đã được lưu & verify khi callback trả về. ──
+    if (_provider === 'vgca') {
+      return _signWithVgcaPlugin({ meta });
+    }
+
     _emit('connecting', 5, 'Kết nối Middleware…');
 
     const transport = await _connectMiddleware();
@@ -232,6 +238,89 @@ window.UsbTokenSigner = (() => {
     _emit('success', 100, 'Ký số VNPT-CA thành công!');
     // realSigned = true → sign-workflow sẽ gửi PDF này lên /upload-signed để server XÁC MINH
     return { signedBase64: res.data, cert: null, realSigned: true, provider: 'vnpt' };
+  }
+
+  /* ── VGCA SignService (Ban Cơ yếu Chính phủ) ─────────────────────────────
+     Tool chạy nền tại wss://127.0.0.1:8987. vgca_sign_approved(prms, cb) gửi
+     { FileUploadHandler, FileName } cho tool; tool tải file chưa ký, ký (chọn
+     cert + PIN + dấu theo mẫu cấu hình trong tool), rồi UPLOAD file đã ký lên
+     FileUploadHandler (server ta verify + lưu). Callback trả { Status, FileServer }.
+     Vị trí/ảnh dấu do tool quyết định theo mẫu chữ ký (tên lãnh đạo) — KHÔNG
+     dùng toạ độ kéo-thả. Không cần license domain.
+  ──────────────────────────────────────────────────────────────────────── */
+  async function _signWithVgcaPlugin({ meta = {} }) {
+    if (typeof window.vgca_sign_approved !== 'function') {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vgca.name;
+      throw err;
+    }
+    const documentId = meta.documentId;
+    if (!documentId) throw new Error('Thiếu documentId cho luồng ký VGCA.');
+
+    // Preflight: kiểm tra tool đang chạy (wss://127.0.0.1:8987)
+    _emit('connecting', 10, 'Kiểm tra VGCA SignService…');
+    const ver = await _vgcaCall(window.vgca_get_version, 6000).catch(() => null);
+    if (!ver) {
+      const err = new Error('NO_MIDDLEWARE');
+      err.code = 'NO_MIDDLEWARE';
+      err.provider = PROVIDERS.vgca.name;
+      throw err;
+    }
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    // Xin signToken + URL từ server
+    _emit('connecting', 25, 'Khởi tạo phiên ký VGCA…');
+    const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+    const pr = await fetch('/api/signing/vgca/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ document_id: documentId }),
+    }).then(r => r.json());
+    if (!pr.success) throw new Error(pr.error || 'Không khởi tạo được phiên ký VGCA.');
+
+    const prms = {
+      FileUploadHandler: pr.data.fileUploadHandler,
+      FileName: pr.data.fileName,
+      SessionId: '',
+      JWTToken: '',
+    };
+
+    _emit('pin', 45, 'Chọn chứng thư & nhập mã PIN trên cửa sổ VGCA SignService…');
+    _emit('signing', 65, 'Tool đang tải, ký & nộp lại tài liệu…');
+
+    // vgca_sign_approved(prmsJson, callback) — callback nhận chuỗi JSON kết quả
+    const rvStr = await new Promise((resolve, reject) => {
+      let settled = false;
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('VGCA SignService không phản hồi (quá thời gian).')); } }, 180000);
+      try {
+        window.vgca_sign_approved(JSON.stringify(prms), (rv) => {
+          if (settled) return; settled = true; clearTimeout(to); resolve(rv);
+        });
+      } catch (e) { if (!settled) { settled = true; clearTimeout(to); reject(e); } }
+    });
+    if (_isCancelled) throw new Error('USER_CANCELLED');
+
+    let rv;
+    try { rv = JSON.parse(rvStr); } catch { throw new Error('Không đọc được kết quả từ VGCA SignService.'); }
+    if (Number(rv.Status) !== 0) {
+      throw new Error(rv.Message || 'Ký VGCA thất bại hoặc người dùng huỷ.');
+    }
+
+    _emit('success', 100, 'Ký số VGCA thành công!');
+    // File đã được tool upload + server verify & lưu trong lúc ký → không cần gửi lại
+    return { signedBase64: null, cert: null, alreadyStored: true, provider: 'vgca', serverData: rv };
+  }
+
+  // Gọi 1 hàm vgcaplugin nhận (callback) → Promise, kèm timeout
+  function _vgcaCall(fn, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const to = setTimeout(() => { if (!settled) { settled = true; reject(new Error('timeout')); } }, timeoutMs);
+      try {
+        fn((rv) => { if (!settled) { settled = true; clearTimeout(to); resolve(rv); } });
+      } catch (e) { if (!settled) { settled = true; clearTimeout(to); reject(e); } }
+    });
   }
 
   let _vnptLicenseCache;
