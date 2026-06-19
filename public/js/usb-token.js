@@ -306,6 +306,12 @@ window.UsbTokenSigner = (() => {
     if (Number(rv.Status) !== 0) {
       throw new Error(rv.Message || 'Ký VGCA thất bại hoặc người dùng huỷ.');
     }
+    // Tool báo Status 0 = ký cục bộ thành công, NHƯNG nếu FileServer rỗng nghĩa là
+    // bước nộp/lưu lên server ta thất bại (vd verify lỗi). FileServer có giá trị mới
+    // là tín hiệu server đã lưu file đã ký.
+    if (!rv.FileServer) {
+      throw new Error('Ký thành công nhưng máy chủ không lưu được file đã ký (kiểm tra xác minh chữ ký / kết nối). ' + (rv.Message || ''));
+    }
 
     _emit('success', 100, 'Ký số VGCA thành công!');
     // File đã được tool upload + server verify & lưu trong lúc ký → không cần gửi lại

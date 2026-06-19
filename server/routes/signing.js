@@ -103,7 +103,7 @@ async function storeVerifiedSignedPdf({ tmpPath, doc, req, otpVerified, method, 
   auditLog.log({
     userId: req.user.id, userEmail: req.user.email, action: 'DOCUMENT_APPROVED',
     targetType: 'document', targetId: doc.ma_doc,
-    detail: { method, otpVerified, signerName, digestAlgorithm: verifyResult.digestAlgorithm },
+    detail: { method: methodLabel, otpVerified, signerName, digestAlgorithm: verifyResult.digestAlgorithm },
     ip: req.ip, userAgent: req.get('user-agent'),
   });
 
@@ -114,12 +114,15 @@ async function storeVerifiedSignedPdf({ tmpPath, doc, req, otpVerified, method, 
       .catch(e => console.error(`[Notify ${methodLabel}]`, e.message));
   } catch (e) {}
 
-  try {
-    await sheetsData.updateDocumentStatus(doc.ma_doc, {
+  // Cập nhật Google Sheets chạy NỀN (fire-and-forget): không chặn phản hồi — tool
+  // VGCA có timeout upload ngắn, nếu await GAS webhook (chậm) tool sẽ báo lỗi 0x0028
+  // dù server đã lưu xong.
+  Promise.resolve()
+    .then(() => sheetsData.updateDocumentStatus(doc.ma_doc, {
       'Trạng thái': 'Đã ký', 'URL': signedFileUrl,
       'Ghi chú': `Ký số (${methodLabel}) bởi ${signerName} lúc ${new Date(signedAt).toLocaleString('vi-VN')}`,
-    });
-  } catch (e) { console.error(`[sheets-data ${methodLabel}]`, e.message); }
+    }))
+    .catch(e => console.error(`[sheets-data ${methodLabel}]`, e.message));
 
   return { ok: true, httpStatus: 200, body: {
     success: true,
@@ -346,7 +349,7 @@ router.post('/upload-signed', authenticate, requireRole('Admin', 'Quản lý'), 
 
       // ── XÁC MINH + lưu (dùng helper chung) ──
       const result = await storeVerifiedSignedPdf({
-        tmpPath, doc, req, otpVerified, method: 'vgca_detached', methodLabel: 'upload-signed',
+        tmpPath, doc, req, otpVerified, method: 'vgca', methodLabel: 'upload-signed',
       });
       cleanup();
       return res.status(result.httpStatus).json(result.body);
@@ -518,44 +521,45 @@ router.get('/vgca/source', async (req, res) => {
 });
 
 // POST /signing/vgca/upload — Tool desktop upload PDF ĐÃ ký (field 'uploadfile')
-// Trả JSON đúng định dạng VGCA mong đợi: { Status, Message, FileName, FileServer }
+// ⚠️ FileUploadHandler phải trả Status KIỂU BOOLEAN (true=OK, false=lỗi) — theo
+// đúng mẫu .NET của VGCA. Trả integer (0/1) khiến tool hiểu nhầm → lỗi 0x0028.
+//   { Status: true|false, Message, FileName, FileServer }
 router.post('/vgca/upload', (req, res) => {
+  const fail = (msg) => res.json({ Status: false, Message: msg, FileName: '', FileServer: '' });
   const p = verifyVgcaSignToken(req.query.t);
-  if (!p) return res.json({ Status: 1, Message: 'Invalid or expired sign token', FileName: '', FileServer: '' });
+  if (!p) return fail('Invalid or expired sign token');
 
   vgcaUpload(req, res, async (uploadErr) => {
     const tmpPath = req.file?.path;
     const cleanup = () => { try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {} };
     try {
-      if (uploadErr) { cleanup(); return res.json({ Status: 1, Message: uploadErr.message || 'Upload error', FileName: '', FileServer: '' }); }
-      if (!tmpPath) return res.json({ Status: 1, Message: 'Chưa nhận được file đã ký (uploadfile).', FileName: '', FileServer: '' });
+      if (uploadErr) { cleanup(); return fail(uploadErr.message || 'Upload error'); }
+      if (!tmpPath) return fail('Chưa nhận được file đã ký (uploadfile).');
 
       const db = getDb();
       const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(p.documentId);
-      if (!doc) { cleanup(); return res.json({ Status: 1, Message: 'Không tìm thấy tài liệu.', FileName: '', FileServer: '' }); }
+      if (!doc) { cleanup(); return fail('Không tìm thấy tài liệu.'); }
 
       // Dựng req.user từ signToken để tái dùng helper (tool không có session)
       const signer = db.prepare('SELECT id, email, ho_ten FROM users WHERE id = ?').get(p.userId);
-      if (!signer) { cleanup(); return res.json({ Status: 1, Message: 'Người ký không hợp lệ.', FileName: '', FileServer: '' }); }
+      if (!signer) { cleanup(); return fail('Người ký không hợp lệ.'); }
       const reqLike = { user: signer, ip: req.ip, get: (h) => req.get(h) };
 
       const result = await storeVerifiedSignedPdf({
-        tmpPath, doc, req: reqLike, otpVerified: 0, method: 'vgca_signservice', methodLabel: 'vgca-signservice',
+        tmpPath, doc, req: reqLike, otpVerified: 0, method: 'vgca', methodLabel: 'vgca-signservice',
       });
       cleanup();
 
-      if (!result.ok) {
-        return res.json({ Status: 1, Message: result.body.error || 'Xác minh chữ ký thất bại.', FileName: '', FileServer: '' });
-      }
+      if (!result.ok) return fail(result.body.error || 'Xác minh chữ ký thất bại.');
       return res.json({
-        Status: 0, Message: '',
+        Status: true, Message: '',
         FileName: `${doc.ma_doc}.pdf`,
         FileServer: result.body.data.signed_file_url,
       });
     } catch (e) {
       console.error('[vgca/upload]', e);
       cleanup();
-      return res.json({ Status: 1, Message: e.message || 'Lỗi xử lý file đã ký.', FileName: '', FileServer: '' });
+      return fail(e.message || 'Lỗi xử lý file đã ký.');
     }
   });
 });
