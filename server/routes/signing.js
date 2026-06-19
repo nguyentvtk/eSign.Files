@@ -404,4 +404,11 @@ router.get('/methods', authenticate, (req, res) => {
   res.json({ success: true, data: methods });
 });
 
+// GET /signing/vnpt-config — Trả license VNPT-CA Plugin (cấu hình qua env VNPT_PLUGIN_LICENSE).
+// License là chuỗi XML do VNPT-CA cấp, gắn với tên miền (vd e-sign-files.vercel.app).
+// Bắt buộc phải set thì plugin mới cho đọc chứng thư & ký số trên trình duyệt.
+router.get('/vnpt-config', authenticate, (req, res) => {
+  res.json({ success: true, data: { license: process.env.VNPT_PLUGIN_LICENSE || '' } });
+});
+
 module.exports = router;

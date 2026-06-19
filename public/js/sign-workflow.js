@@ -339,13 +339,21 @@ window.SignWorkflow = (() => {
         result = { signedBase64: null, cert: null };
       }
 
-      // 4. Gửi lên server để lưu chữ ký + stamp + cập nhật DB
-      _renderPhase('signing', 85, 'Lưu chữ ký lên server…');
-      const apiResult = await _callSignApi({
-        cert: result.cert,
-        signature_value: result.signedBase64 ? result.signedBase64.substring(0, 200) : '',
-        stamp_position: { page: _sigBox.page, x: pdfX, y: pdfY, width: pdfW, height: pdfH },
-      });
+      // 4a. Ký THẬT (VNPT/VGCA plugin trả PDF đã ký PAdES) → gửi lên /upload-signed
+      //     để server XÁC MINH chữ ký số + chuỗi tin cậy rồi lưu nguyên trạng.
+      let apiResult;
+      if (result.realSigned && result.signedBase64) {
+        _renderPhase('signing', 85, 'Xác minh chữ ký số trên server…');
+        apiResult = await _uploadSignedBase64(result.signedBase64);
+      } else {
+        // 4b. Luồng cũ (stamp phía server) — middleware thử nghiệm / fallback
+        _renderPhase('signing', 85, 'Lưu chữ ký lên server…');
+        apiResult = await _callSignApi({
+          cert: result.cert,
+          signature_value: result.signedBase64 ? result.signedBase64.substring(0, 200) : '',
+          stamp_position: { page: _sigBox.page, x: pdfX, y: pdfY, width: pdfW, height: pdfH },
+        });
+      }
 
       if (!apiResult.success) {
         _renderError(apiResult.error || 'Lỗi không xác định');
@@ -414,6 +422,29 @@ window.SignWorkflow = (() => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify(data),
+    });
+    return resp.json();
+  }
+
+  // PDF đã ký THẬT (base64) từ plugin → upload lên /upload-signed để server xác minh
+  // chữ ký số nhúng (PKCS#7/PAdES) + chuỗi tin cậy, rồi lưu nguyên trạng (không stamp đè).
+  async function _uploadSignedBase64(signedBase64) {
+    const bin = atob(signedBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+
+    const fd = new FormData();
+    fd.append('document_id', _doc.id);
+    fd.append('signed_file', blob, `${_doc.ma_doc || 'tai-lieu'}_signed.pdf`);
+    const otp = await _maybePromptOtp();
+    if (otp) fd.append('otp_token', otp);
+
+    const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+    const resp = await fetch('/api/signing/upload-signed', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd,
     });
     return resp.json();
   }

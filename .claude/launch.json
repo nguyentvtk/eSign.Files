@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "esign",
-      "runtimeExecutable": "/Users/n3n/node-v22.16.0-darwin-arm64/bin/node",
+      "runtimeExecutable": "node",
       "runtimeArgs": ["server/index.js"],
       "port": 3000
     }
