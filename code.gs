@@ -2901,8 +2901,8 @@ function _uploadError(message, code) {
 const DATA_SHEET_HEADERS = [
   "Ngày tạo", "Mã TL", "Tên TL", "Loại", "Dự án",
   "Thực hiện", "URL", "Kích thước", "Người tạo", "Trạng thái",
+  "Ngày phát hành",
   "Cấu hình người ký", "Bước hiện tại", "Lịch sử ký", "Vị trí ký", "File ID",
-  "Ngày phát hành"
 ];
 
 function _ensureDataSheetHeaders() {
@@ -2945,17 +2945,17 @@ function _logUploadToSheet(fileId, fileName, sizeBytes, uploaderEmail, metaData,
     const userMaTL = String(metaData.maTL ?? "").trim();
     const maDoc = userMaTL || _generateDocumentCode(metaData.loaiTaiLieu);
 
-    // LAYOUT sheet Data (v2 — cập nhật):
+    // LAYOUT sheet Data (v3 — cập nhật):
     //  A Ngày tạo (DD/MM/YYYY HH:MM AM/PM)
     //  B Mã TL (số văn bản do người dùng nhập hoặc tự sinh)
     //  C Tên TL   D Loại   E Dự án
     //  F Thực hiện = TÊN NGƯỜI KÝ VĂN BẢN (từ signerConfig)
     //  G URL (Drive preview)   H Kích thước (KB/MB)
     //  I Người tạo (email)   J Trạng thái
-    //  K Cấu hình người ký (JSON)   L Bước hiện tại
-    //  M Lịch sử ký (JSON)   N Vị trí ký (sigFrames JSON)
-    //  O File ID (ẩn, phục vụ tra cứu/ký)
-    //  P Ngày phát hành (do người dùng nhập, DD/MM/YYYY)
+    //  K Ngày phát hành (do người dùng nhập, DD/MM/YYYY)
+    //  L Cấu hình người ký (JSON)   M Bước hiện tại
+    //  N Lịch sử ký (JSON)   O Vị trí ký (sigFrames JSON)
+    //  P File ID (ẩn, phục vụ tra cứu/ký)
     const signerConfigStr = metaData.signerConfig
       ? JSON.stringify(metaData.signerConfig)
       : "";
@@ -2974,13 +2974,13 @@ function _logUploadToSheet(fileId, fileName, sizeBytes, uploaderEmail, metaData,
       _formatFileSize(sizeBytes),          // H — Kích thước (KB / MB)
       uploaderEmail,                       // I — Người tạo (email)
       "Chờ ký",                            // J — Trạng thái ban đầu
-      signerConfigStr,                     // K — Cấu hình người ký (JSON)
-      0,                                   // L — Bước hiện tại
-      "[]",                                // M — Lịch sử ký (JSON)
-      metaData.sigFrames                   // N — Vị trí ký (sigFrames JSON)
+      metaData.ngayPhatHanh || "",         // K — Ngày phát hành (do người dùng nhập)
+      signerConfigStr,                     // L — Cấu hình người ký (JSON)
+      0,                                   // M — Bước hiện tại
+      "[]",                                // N — Lịch sử ký (JSON)
+      metaData.sigFrames                   // O — Vị trí ký (sigFrames JSON)
         ? JSON.stringify(metaData.sigFrames) : "[]",
-      fileId || "",                        // O — File ID (tra cứu / xử lý ký)
-      metaData.ngayPhatHanh || "",         // P — Ngày phát hành (do người dùng nhập)
+      fileId || "",                        // P — File ID (tra cứu / xử lý ký)
     ];
 
     sheet.getRange(lastRow + 1, 1, 1, newRow.length).setValues([newRow]);
