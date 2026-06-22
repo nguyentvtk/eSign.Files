@@ -2812,6 +2812,63 @@ function _formatFileSize(bytes) {
 }
 
 /**
+ * Định dạng ngày giờ theo múi giờ Việt Nam (UTC+7) thành chuỗi văn bản.
+ * Kết quả: "DD/MM/YYYY HH:MM AM/PM" (12 giờ, sáng = AM, chiều/tối = PM)
+ * Ví dụ:   "22/06/2026 09:30 AM"  hoặc  "22/06/2026 02:15 PM"
+ *
+ * Lưu ý: trả về STRING (không phải Date object) để Google Sheets
+ * không tự định dạng lại giá trị theo cài đặt locale của Spreadsheet.
+ *
+ * @param {Date} date - Đối tượng Date (thường là new Date())
+ * @returns {string}
+ */
+function _formatDateVN(date) {
+  const VN_OFFSET_MS = 7 * 60 * 60 * 1000;         // UTC+7
+  const vnDate       = new Date(date.getTime() + VN_OFFSET_MS);
+
+  const dd   = String(vnDate.getUTCDate()).padStart(2, "0");
+  const mm   = String(vnDate.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = vnDate.getUTCFullYear();
+  const h24  = vnDate.getUTCHours();                // 0–23 theo múi UTC+7
+  const min  = String(vnDate.getUTCMinutes()).padStart(2, "0");
+  const ampm = h24 < 12 ? "AM" : "PM";
+  const h12  = String(h24 % 12 || 12).padStart(2, "0"); // chuyển 0→12
+
+  return `${dd}/${mm}/${yyyy} ${h12}:${min} ${ampm}`;
+}
+
+/**
+ * Trích xuất tên người ký chính từ đối tượng signerConfig.
+ *
+ * Cấu trúc signerConfig từ frontend:
+ *   - Chế độ đơn  : { mode: "single", single: { maNV, hoTen, ... } }
+ *   - Chế độ nhiều: { mode: "multi",  steps:  [{ maNV, hoTen, ... }, ...] }
+ *
+ * @param {Object|string|null} signerConfig - Config (object hoặc JSON string)
+ * @returns {string} Tên người ký (nhiều người → nối bởi ", "), hoặc "" nếu không có
+ */
+function _extractSignerName(signerConfig) {
+  try {
+    const cfg = typeof signerConfig === "string"
+      ? JSON.parse(signerConfig)
+      : signerConfig;
+    if (!cfg) return "";
+
+    if (cfg.mode === "single" && cfg.single?.hoTen) {
+      return String(cfg.single.hoTen).trim();
+    }
+
+    if (cfg.mode === "multi" && Array.isArray(cfg.steps)) {
+      const names = cfg.steps
+        .map(s => String(s.hoTen || s.maNV || "").trim())
+        .filter(Boolean);
+      return names.join(", ");
+    }
+  } catch (_) { /* JSON parse lỗi → trả về rỗng */ }
+  return "";
+}
+
+/**
  * Tạo response lỗi chuẩn hóa cho module Upload.
  *
  * @param {string} message - Thông báo lỗi
@@ -2844,7 +2901,8 @@ function _uploadError(message, code) {
 const DATA_SHEET_HEADERS = [
   "Ngày tạo", "Mã TL", "Tên TL", "Loại", "Dự án",
   "Thực hiện", "URL", "Kích thước", "Người tạo", "Trạng thái",
-  "Cấu hình người ký", "Bước hiện tại", "Lịch sử ký", "Vị trí ký", "File ID"
+  "Cấu hình người ký", "Bước hiện tại", "Lịch sử ký", "Vị trí ký", "File ID",
+  "Ngày phát hành"
 ];
 
 function _ensureDataSheetHeaders() {
@@ -2887,27 +2945,33 @@ function _logUploadToSheet(fileId, fileName, sizeBytes, uploaderEmail, metaData,
     const userMaTL = String(metaData.maTL ?? "").trim();
     const maDoc = userMaTL || _generateDocumentCode(metaData.loaiTaiLieu);
 
-    // [LAYOUT sheet Data — GIỮ "Cấu hình người ký" trong Data vì luồng ký
-    //  (getPendingDocsForUser/signDocument) phụ thuộc chặt vào cột này]
-    //  A Logs/Ngày  B Mã TL  C Tên TL  D Loại  E Dự án
-    //  F Thực hiện = TÊN NGƯỜI/TỔ CHỨC GỬI (không phải tên file)
-    //  G URL       = URL file trên Drive (gộp, bỏ cột File ID & cột URL trùng)
-    //  H Kích thước  I Người tạo (email)  J Trạng thái
-    //  K Cấu hình người ký (JSON)  L Bước hiện tại  M Lịch sử ký (JSON)
-    //  N Vị trí ký (sigFrames JSON)  O File ID (ẩn, phục vụ tra cứu/ký)
+    // LAYOUT sheet Data (v2 — cập nhật):
+    //  A Ngày tạo (DD/MM/YYYY HH:MM AM/PM)
+    //  B Mã TL (số văn bản do người dùng nhập hoặc tự sinh)
+    //  C Tên TL   D Loại   E Dự án
+    //  F Thực hiện = TÊN NGƯỜI KÝ VĂN BẢN (từ signerConfig)
+    //  G URL (Drive preview)   H Kích thước (KB/MB)
+    //  I Người tạo (email)   J Trạng thái
+    //  K Cấu hình người ký (JSON)   L Bước hiện tại
+    //  M Lịch sử ký (JSON)   N Vị trí ký (sigFrames JSON)
+    //  O File ID (ẩn, phục vụ tra cứu/ký)
+    //  P Ngày phát hành (do người dùng nhập, DD/MM/YYYY)
     const signerConfigStr = metaData.signerConfig
       ? JSON.stringify(metaData.signerConfig)
       : "";
 
+    // Trích xuất tên người ký văn bản từ cấu hình signerConfig
+    const signerName = _extractSignerName(metaData.signerConfig);
+
     const newRow = [
-      new Date(),                          // A — Logs / Ngày tạo
-      maDoc,                               // B — Mã tài liệu (STT)
+      _formatDateVN(new Date()),           // A — Ngày tạo  (DD/MM/YYYY HH:MM AM/PM, UTC+7)
+      maDoc,                               // B — Mã tài liệu (số văn bản hoặc tự sinh)
       metaData.tenTaiLieu  || "",          // C — Tên tài liệu
       metaData.loaiTaiLieu || "",          // D — Loại tài liệu
       metaData.tenDuAn     || "",          // E — Tên dự án
-      uploaderName || uploaderEmail || "", // F — Thực hiện (người/tổ chức gửi)
+      signerName || uploaderName || "",    // F — Thực hiện (tên người ký văn bản)
       driveUrl,                            // G — URL file trên Drive
-      _formatFileSize(sizeBytes),          // H — Kích thước
+      _formatFileSize(sizeBytes),          // H — Kích thước (KB / MB)
       uploaderEmail,                       // I — Người tạo (email)
       "Chờ ký",                            // J — Trạng thái ban đầu
       signerConfigStr,                     // K — Cấu hình người ký (JSON)
@@ -2916,6 +2980,7 @@ function _logUploadToSheet(fileId, fileName, sizeBytes, uploaderEmail, metaData,
       metaData.sigFrames                   // N — Vị trí ký (sigFrames JSON)
         ? JSON.stringify(metaData.sigFrames) : "[]",
       fileId || "",                        // O — File ID (tra cứu / xử lý ký)
+      metaData.ngayPhatHanh || "",         // P — Ngày phát hành (do người dùng nhập)
     ];
 
     sheet.getRange(lastRow + 1, 1, 1, newRow.length).setValues([newRow]);

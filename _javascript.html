@@ -2688,7 +2688,7 @@ const NewDocModule = (() => {
     _selectedType=''; _selectedFile=null; _isSubmitting=false;
     document.querySelectorAll('.doc-type-btn').forEach(b=>{b.classList.remove('selected');b.setAttribute('aria-checked','false');});
     if($('nd-loai-td')) $('nd-loai-td').value='';
-    ['nd-ten-td','nd-ten-da','nd-ghi-chu'].forEach(id=>{const el=$(id);if(el){el.value='';el.classList.remove('has-error');}});
+    ['nd-ten-td','nd-ten-da','nd-ghi-chu','nd-ma-tl','nd-ngay-ph'].forEach(id=>{const el=$(id);if(el){el.value='';el.classList.remove('has-error');}});
     ['nd-ten-count','nd-da-count','nd-gc-count'].forEach(id=>{const el=$(id);if(el)el.textContent='0 / '+(id==='nd-ten-count'?120:id==='nd-da-count'?80:300);});
     _clearFile();
     document.querySelectorAll('.nd-error-msg').forEach(e=>e.classList.remove('show'));
@@ -3007,6 +3007,8 @@ const NewDocModule = (() => {
       loaiTaiLieu   : _selectedType,
       tenTaiLieu    : ($('nd-ten-td')?.value ?? '').trim(),
       tenDuAn       : ($('nd-ten-da')?.value ?? '').trim(),
+      maTL          : ($('nd-ma-tl')?.value  ?? '').trim(),   // Số văn bản do người dùng nhập
+      ngayPhatHanh  : ($('nd-ngay-ph')?.value ?? '').trim(),  // Ngày phát hành tài liệu
       ghiChu        : ($('nd-ghi-chu')?.value ?? '').trim(),
       signerConfig  : _signerConfig,
       sigFrames     : PdfViewer.getFrames(),  // ← Tọa độ khung chữ ký
