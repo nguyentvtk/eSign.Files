@@ -5,6 +5,13 @@
    Cấu hình: GAS_WEBAPP_URL = URL deploy của Apps Script
 ═══════════════════════════════════════════════════════════ */
 
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 const SHEET_ID = process.env.GOOGLE_SHEET_ID || '';
 const GAS_WEBAPP_URL = process.env.GAS_WEBAPP_URL || '';
 const DATA_SHEET_NAME = process.env.DATA_SHEET_NAME || 'Data';
@@ -26,16 +33,18 @@ async function appendDocumentRow(docInfo) {
     sheetName: DATA_SHEET_NAME,
     data: {
       'Ngày tạo': docInfo.ngayTao || new Date().toISOString(),
-      'Mã TL': docInfo.maDoc || '',
+      'Mã TL': docInfo.soVanBan || docInfo.maDoc || '',
       'Tên TL': docInfo.tenTaiLieu || '',
       'Loại': docInfo.loaiTaiLieu || '',
       'Dự án': docInfo.tenDuAn || '',
+      'Thực hiện': docInfo.nguoiKy || '',
       'Tên file': docInfo.tenFile || '',
       'File ID': docInfo.fileId || '',
       'URL': docInfo.fileUrl || '',
-      'Kích thước': docInfo.fileSize || '',
+      'Kích thước': formatFileSize(docInfo.fileSize),
       'Người tạo': docInfo.nguoiTao || '',
       'Trạng thái': docInfo.trangThai || 'Chờ ký',
+      'Ngày phát hành': docInfo.ngayPhatHanh || '',
       'Ghi chú': docInfo.ghiChu || '',
     },
   };

@@ -288,7 +288,7 @@
       formData.append('file', fileInput.files[0]);
       formData.append('ten_tai_lieu', $('#nd-name').value.trim());
       formData.append('loai_tai_lieu', $('#nd-type').value);
-      formData.append('trich_yeu', $('#nd-summary')?.value?.trim()||'');
+      formData.append('ngay_phat_hanh', $('#nd-ngay-ph')?.value || '');
       // Sổ công văn
       const pid = $('#nd-project')?.value;
       const phid = $('#nd-phase')?.value;
@@ -317,7 +317,7 @@
     finally { btn.classList.remove('loading'); btn.disabled=false; }
   });
 
-  $('#btn-reset-doc')?.addEventListener('click',()=>{$('#new-doc-form').reset();dz.classList.remove('has-file');_attachFiles=[];renderAttachList();updateSummary();});
+  $('#btn-reset-doc')?.addEventListener('click',()=>{$('#new-doc-form').reset();dz.classList.remove('has-file');_attachFiles=[];renderAttachList();updateSummary();const d=$('#nd-ngay-ph');if(d)d.value=new Date().toISOString().slice(0,10);});
 
   // ── Pending Documents (for Admin/Quản lý) ──
   async function loadPending() {
@@ -550,6 +550,9 @@
 
   // ── New Doc Form: load projects, approvers ──
   async function initNewDocForm() {
+    // Pre-fill "Ngày phát hành" with today
+    const dateEl = $('#nd-ngay-ph');
+    if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
     try {
       const [projRes, apprRes] = await Promise.all([
         _fetchAuth('/api/projects'),       // server tự lọc theo quyền phụ trách

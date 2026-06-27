@@ -188,7 +188,8 @@ router.post('/', authenticate, requirePermission('Khởi tạo tài liệu'), (r
     }
 
     const { ten_tai_lieu, loai_tai_lieu, trich_yeu, ghi_chu,
-            project_id, phase_id, loai_van_ban, so_van_ban, so_van_ban_mode, nguoi_duyet_id } = req.body;
+            project_id, phase_id, loai_van_ban, so_van_ban, so_van_ban_mode, nguoi_duyet_id,
+            ngay_phat_hanh } = req.body;
     if (!ten_tai_lieu) return res.status(400).json({ success: false, error: 'Tên tài liệu không được để trống.' });
 
     try {
@@ -267,18 +268,22 @@ router.post('/', authenticate, requirePermission('Khởi tạo tài liệu'), (r
       // Ghi thông tin vào sheet Data
       try {
         const project = project_id ? db.prepare('SELECT ten_du_an FROM projects WHERE id = ?').get(parseInt(project_id)) : null;
+        const approverRow = nguoi_duyet_id ? db.prepare('SELECT ho_ten FROM users WHERE id = ?').get(parseInt(nguoi_duyet_id)) : null;
         sheetsData.appendDocumentRow({
           ngayTao: new Date().toISOString(),
           maDoc,
+          soVanBan: finalSoVanBan,
           tenTaiLieu: ten_tai_lieu,
           loaiTaiLieu: loai_van_ban || loai_tai_lieu || '',
           tenDuAn: project?.ten_du_an || '',
           tenFile: mainFile.originalname,
           fileUrl: mainUpload.url,
           fileSize: mainFile.size,
-          nguoiTao: req.user.ho_ten,
+          nguoiTao: req.user.email || req.user.ho_ten,
+          nguoiKy: approverRow?.ho_ten || '',
           trangThai: 'Chờ ký',
           ghiChu: ghi_chu || '',
+          ngayPhatHanh: ngay_phat_hanh || '',
         }).catch(e => console.error('[sheets-data write]', e.message));
       } catch (e) { console.error('[sheets-data wrap]', e.message); }
 

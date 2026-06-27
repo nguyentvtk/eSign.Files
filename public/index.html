@@ -255,9 +255,13 @@
                       <input type="text" class="nd-input" id="nd-so-vb" placeholder="Tự sinh sau khi chọn loại" readonly style="flex:1">
                     </div>
                   </div>
-                  <div class="col-12">
+                  <div class="col-md-6">
                     <label class="nd-label">Người duyệt (lãnh đạo ký) <span class="req">*</span></label>
                     <select class="nd-input" id="nd-approver"><option value="">— Chọn người duyệt —</option></select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="nd-label">Ngày phát hành</label>
+                    <input type="date" class="nd-input" id="nd-ngay-ph" name="ngay_phat_hanh">
                   </div>
                 </div>
               </div>
@@ -267,8 +271,8 @@
               <div class="nd-card-header"><div class="nd-card-icon" style="background:#EBF5FF;color:#1A56DB"><i class="bi bi-file-earmark-text"></i></div><div><div class="nd-card-title">Thông tin tài liệu</div></div></div>
               <div class="nd-card-body">
                 <div class="nd-form-group">
-                  <label class="nd-label">Tên tài liệu <span class="req">*</span> <span class="nd-hint">Mặc định lấy theo tên file</span></label>
-                  <input type="text" class="nd-input" id="nd-name" name="ten_tai_lieu" placeholder="Sẽ tự lấy theo tên file PDF" required>
+                  <label class="nd-label">Tên tài liệu <span class="req">*</span></label>
+                  <input type="text" class="nd-input" id="nd-name" name="ten_tai_lieu" placeholder="Nhập tên tài liệu" required>
                 </div>
                 <div class="nd-form-group">
                   <label class="nd-label">Loại tài liệu (kỹ thuật)</label>
@@ -279,10 +283,6 @@
                     <option value="to-trinh">Tờ trình</option>
                     <option value="cong-van">Công văn</option>
                   </select>
-                </div>
-                <div class="nd-form-group">
-                  <label class="nd-label">Trích yếu</label>
-                  <textarea class="nd-input" id="nd-summary" name="trich_yeu" rows="3" placeholder="Mô tả ngắn gọn nội dung..."></textarea>
                 </div>
               </div>
             </div>
