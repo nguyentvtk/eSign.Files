@@ -621,8 +621,8 @@
             <button class="btn-outline-custom" id="sw-tab-attach"><i class="bi bi-paperclip"></i> File đính kèm <span id="sw-attach-count">0</span></button>
             <button class="btn-outline-custom" id="sw-replace-pdf"><i class="bi bi-upload"></i> Tải PDF thay thế</button>
             <input type="file" id="sw-replace-input" accept=".pdf" style="display:none">
-            <button class="btn-primary-custom" id="sw-detached-sign" title="Ký bằng phần mềm desktop (VGCA Ban Cơ yếu…) rồi upload lại"><i class="bi bi-shield-lock"></i> Ký rời (VGCA)</button>
-            <select id="sw-provider" class="nd-input" style="width:auto;padding:6px 30px 6px 10px;font-size:13px;display:none" title="Nhà cung cấp USB Token">
+            <button class="btn-primary-custom" id="sw-detached-sign" title="Ký bằng phần mềm desktop (VGCA, VNPT-CA…) rồi upload lại"><i class="bi bi-shield-lock"></i> Ký rời (VGCA / VNPT)</button>
+            <select id="sw-provider" class="nd-input" style="width:auto;padding:6px 30px 6px 10px;font-size:13px;display:none" title="Nhà cung cấp chứng thư số USB Token">
               <option value="vgca">VGCA (Ban Cơ yếu)</option>
               <option value="vnpt">VNPT-CA</option>
               <option value="viettel">Viettel-CA (thử nghiệm)</option>
@@ -657,7 +657,7 @@
 
         <!-- Detached signing panel (Ký rời VGCA) -->
         <div id="sw-detached-panel" style="display:none;background:#fff;border-top:1px solid var(--card-border);padding:16px 18px;max-height:340px;overflow-y:auto">
-          <div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#1A56DB"><i class="bi bi-shield-lock"></i> Ký số bằng phần mềm VGCA (Ban Cơ yếu) — ký rời</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#1A56DB"><i class="bi bi-shield-lock"></i> Ký số bằng phần mềm desktop (VGCA / VNPT-CA) — ký rời</div>
           <div style="display:grid;grid-template-columns:1fr;gap:14px;font-size:13px">
 
             <div style="display:flex;gap:12px;align-items:flex-start">
@@ -672,11 +672,15 @@
             <div style="display:flex;gap:12px;align-items:flex-start">
               <span class="sw-dstep-num">2</span>
               <div style="flex:1">
-                <div style="font-weight:600;margin-bottom:4px">Ký bằng phần mềm VGCA trên máy</div>
+                <div style="font-weight:600;margin-bottom:4px">Ký bằng phần mềm desktop trên máy</div>
                 <div style="color:var(--text-secondary);line-height:1.7">
-                  Mở <strong>Phần mềm ký số VGCA (Ban Cơ yếu)</strong> → cắm USB Token → mở file PDF vừa tải →
-                  chọn chứng thư số → ký (nhập mã PIN) → <strong>lưu file PDF đã ký</strong>.
-                  Có thể dùng phần mềm khác hỗ trợ ký PDF chuẩn PAdES (Foxit, Adobe…).
+                  Cắm USB Token → mở phần mềm ký phù hợp với nhà cung cấp chứng thư của bạn:
+                  <ul style="margin:6px 0 6px 18px;padding:0">
+                    <li><strong>VNPT-CA</strong>: mở phần mềm ký <em>iSign</em> hoặc <em>VNPT Sign</em> → chọn file PDF vừa tải → ký → lưu file đã ký.</li>
+                    <li><strong>VGCA (Ban Cơ yếu)</strong>: mở <em>Phần mềm ký số VGCA</em> → cắm USB Token → mở file → chọn chứng thư → ký (nhập PIN) → lưu.</li>
+                    <li>Hoặc dùng phần mềm khác hỗ trợ ký PDF chuẩn <strong>PAdES</strong> (Foxit, Adobe…).</li>
+                  </ul>
+                  Sau khi ký xong, upload file PDF đã ký ở bước 3 để hệ thống xác minh và lưu.
                 </div>
               </div>
             </div>
@@ -779,7 +783,8 @@
       <select class="nd-input" id="sign-method">
         <option value="usb_token">USB Token</option>
         <option value="remote">Remote Signing (Cloud CA)</option>
-        <option value="vgca">VGCA Sign Service</option>
+        <option value="vgca">VGCA Sign Service (Ban Cơ yếu)</option>
+        <option value="vnpt">VNPT-CA</option>
       </select>
     </div>
     <div class="nd-form-group" id="otp-group" style="display:none">
