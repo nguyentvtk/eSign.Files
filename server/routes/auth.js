@@ -6,6 +6,7 @@ const { getDb } = require('../db/database');
 const { hashPassword, verifyPassword, sha256, randomToken } = require('../utils/crypto');
 const { authenticate } = require('../middleware/auth');
 const auditLog = require('../services/audit-log');
+const { isDatabaseError, withDebug } = require('../utils/error-response');
 const otpService = require('../services/otp');
 const sheets = require('../services/google-sheets');
 const { upsertFromSheet } = require('../services/user-sync');
@@ -116,7 +117,15 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error('[login FATAL]', err.message, err.stack);
-    res.status(500).json({ success: false, error: 'Lỗi đăng nhập.', debug: { message: err.message } });
+    // Token Turso hết hạn / mất kết nối KHÔNG phải lỗi thông tin đăng nhập.
+    // Tách thông báo để người dùng không mất công nghi ngờ tài khoản, mật khẩu.
+    if (isDatabaseError(err)) {
+      return res.status(503).json(withDebug({
+        success: false,
+        error: 'Hệ thống tạm thời không kết nối được cơ sở dữ liệu. Vui lòng thử lại sau hoặc liên hệ quản trị viên.',
+      }, err));
+    }
+    res.status(500).json(withDebug({ success: false, error: 'Lỗi đăng nhập.' }, err));
   }
 });
 

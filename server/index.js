@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const { getDb, close } = require('./db/database');
 const { hashPassword } = require('./utils/crypto');
+const { isDebugEnabled, isDatabaseError, withDebug } = require('./utils/error-response');
 
 const app = express();
 
@@ -33,7 +34,7 @@ app.use('/api', (req, res, next) => {
     return res.status(503).json({
       success: false,
       error: 'Database không kết nối được.',
-      debug: { message: e.message, hasTurso: !!process.env.TURSO_DATABASE_URL, hasToken: !!process.env.TURSO_AUTH_TOKEN },
+      ...(isDebugEnabled() ? { debug: { message: e.message, hasTurso: !!process.env.TURSO_DATABASE_URL, hasToken: !!process.env.TURSO_AUTH_TOKEN } } : {}),
     });
   }
 });
@@ -103,13 +104,14 @@ app.use((err, req, res, _next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ success: false, error: `File vượt quá ${config.upload.maxSizeMB}MB.` });
   }
-  // Expose error trên Vercel để debug nhanh (có thể tắt sau khi ổn định)
-  const debug = process.env.VERCEL || process.env.NODE_ENV !== 'production';
-  res.status(500).json({
-    success: false,
-    error: 'Lỗi máy chủ nội bộ.',
-    ...(debug ? { debug: { message: err.message, type: err.constructor?.name } } : {}),
-  });
+  // Lỗi hạ tầng dữ liệu → 503 + thông báo riêng, không lẫn với lỗi nghiệp vụ.
+  if (isDatabaseError(err)) {
+    return res.status(503).json(withDebug({
+      success: false,
+      error: 'Hệ thống tạm thời không kết nối được cơ sở dữ liệu. Vui lòng thử lại sau.',
+    }, err));
+  }
+  res.status(500).json(withDebug({ success: false, error: 'Lỗi máy chủ nội bộ.' }, err));
 });
 
 
