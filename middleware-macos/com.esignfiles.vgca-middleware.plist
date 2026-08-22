@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tuỳ chọn: chạy middleware tự động mỗi khi đăng nhập.
+
+  Cài đặt:
+    cp com.esignfiles.vgca-middleware.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.esignfiles.vgca-middleware.plist
+
+  Gỡ:
+    launchctl unload ~/Library/LaunchAgents/com.esignfiles.vgca-middleware.plist
+    rm ~/Library/LaunchAgents/com.esignfiles.vgca-middleware.plist
+
+  Nhớ sửa ĐƯỜNG DẪN bên dưới cho khớp máy bạn.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.esignfiles.vgca-middleware</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/n3n/eSignFiles/middleware-macos/start.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/vgca-middleware.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/vgca-middleware.log</string>
+</dict>
+</plist>
