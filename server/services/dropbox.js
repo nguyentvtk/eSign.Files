@@ -20,6 +20,7 @@ const APP_KEY = process.env.DROPBOX_APP_KEY || '';
 const APP_SECRET = process.env.DROPBOX_APP_SECRET || '';
 const DROPBOX_FOLDER = process.env.DROPBOX_FOLDER || '/eSign/TaiLieuTrinhKy';
 const DROPBOX_SHARED_LINK = process.env.DROPBOX_SHARED_LINK || '';
+const DROPBOX_LOCAL_DIR = process.env.DROPBOX_LOCAL_DIR || '';
 
 let _activeToken = STATIC_TOKEN;
 let _tokenExpiresAt = 0;     // ms epoch
@@ -92,8 +93,26 @@ function _doCall(url, options, token) {
   return fetch(url, { ...options, headers });
 }
 
+/* ── Copy to local Dropbox sync folder ───────────── */
+function _copyToLocalDropbox(localPath, remoteName, subfolder) {
+  if (!DROPBOX_LOCAL_DIR) return;
+  try {
+    const monthFolder = new Date().toISOString().slice(0, 7);
+    const dir = path.join(DROPBOX_LOCAL_DIR, monthFolder, subfolder || '');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, remoteName);
+    fs.copyFileSync(localPath, dest);
+    console.log('[Dropbox] Copied to local sync folder:', dest);
+  } catch (e) {
+    console.error('[Dropbox] Local copy failed:', e.message);
+  }
+}
+
 /* ── Upload file ──────────────────────────────────── */
 async function uploadFile(localPath, remoteName, subfolder = '') {
+  // Always copy to local Dropbox sync folder if configured
+  _copyToLocalDropbox(localPath, remoteName, subfolder);
+
   if (!isConfigured()) {
     return _localFallback(localPath, remoteName, subfolder);
   }

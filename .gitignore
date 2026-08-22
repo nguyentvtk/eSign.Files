@@ -10,6 +10,10 @@ uploads/
 .vercel
 *.log
 
+# Cài đặt Claude Code riêng của từng máy — hay chứa lệnh kèm credential.
+# Bản dùng chung là .claude/settings.json.
+.claude/settings.local.json
+
 # Legacy GAS files (giữ tham khảo)
 # code.gs
 # _javascript.html
