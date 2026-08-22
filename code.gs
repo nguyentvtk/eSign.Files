@@ -140,6 +140,22 @@ function doGet(e) {
 function doPost(e) {
   try {
     const p = (e && e.parameter) || {};
+
+    // ── Xử lý JSON request từ Node.js backend (append_data / update_data) ──
+    if (e && e.postData && e.postData.type === "application/json") {
+      try {
+        const json = JSON.parse(e.postData.contents);
+        if (json.action === "append_data") {
+          return _handleAppendData(json);
+        }
+        if (json.action === "update_data") {
+          return _handleUpdateData(json);
+        }
+      } catch (jsonErr) {
+        Logger.log("[doPost] JSON parse error: " + jsonErr.message);
+      }
+    }
+
     const maTL = String(p.maTL || p.MaTL || p.DocNumber || "").trim();
     let blob = null, fileName = String(p.filename || p.FileName || "signed.pdf").trim();
 
@@ -148,7 +164,6 @@ function doPost(e) {
     } else if (p.filedata) {
       blob = Utilities.newBlob(Utilities.base64Decode(p.filedata), "application/pdf", fileName);
     } else if (e && e.postData && e.postData.contents) {
-      // Fallback: lưu nguyên contents (có thể là multipart thô — cần endpoint chuyên dụng để parse chuẩn)
       blob = Utilities.newBlob(e.postData.contents, "application/pdf", fileName);
     }
 
@@ -187,6 +202,110 @@ function doPost(e) {
     Logger.log("[doPost] LỖI: " + err.message);
     return ContentService.createTextOutput(JSON.stringify({
       Status: 1, Message: String(err.message), FileName: "", FileServer: ""
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Append một dòng mới vào sheet Data từ Node.js backend.
+ */
+function _handleAppendData(json) {
+  try {
+    const sheetName = json.sheetName || SHEET_NAMES.DATA;
+    const sheet = getSheet(sheetName);
+    const data = json.data || {};
+
+    const lastCol = sheet.getLastColumn();
+    if (lastCol === 0) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false, error: "Sheet rỗng — chưa có header."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+    const newRow = headers.map(h => data[h] !== undefined ? data[h] : "");
+
+    sheet.appendRow(newRow);
+    Logger.log("[_handleAppendData] ✅ Đã thêm dòng mới vào " + sheetName + ": " + (data["Mã TL"] || ""));
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true, message: "Đã ghi dữ liệu.", row: sheet.getLastRow()
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    Logger.log("[_handleAppendData] LỖI: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false, error: err.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Cập nhật dòng trong sheet Data theo Mã TL từ Node.js backend.
+ */
+function _handleUpdateData(json) {
+  try {
+    const sheetName = json.sheetName || SHEET_NAMES.DATA;
+    const maDoc = String(json.maDoc || "").trim();
+    const updates = json.data || {};
+
+    if (!maDoc) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false, error: "Thiếu maDoc."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const sheet = getSheet(sheetName);
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 2 || lastCol === 0) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false, error: "Sheet rỗng."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const allData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    const headers = allData[0].map(h => String(h).trim());
+    const maDocColIdx = headers.indexOf("Mã TL");
+
+    if (maDocColIdx === -1) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false, error: "Không tìm thấy cột 'Mã TL'."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    let foundRow = -1;
+    for (let r = 1; r < allData.length; r++) {
+      if (String(allData[r][maDocColIdx]).trim() === maDoc) {
+        foundRow = r + 1;
+        break;
+      }
+    }
+
+    if (foundRow === -1) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false, error: "Không tìm thấy tài liệu: " + maDoc
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    Object.entries(updates).forEach(function(entry) {
+      var colName = entry[0];
+      var value = entry[1];
+      var colIdx = headers.indexOf(colName);
+      if (colIdx !== -1) {
+        sheet.getRange(foundRow, colIdx + 1).setValue(value);
+      }
+    });
+
+    Logger.log("[_handleUpdateData] ✅ Cập nhật " + maDoc + " tại dòng " + foundRow);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true, message: "Đã cập nhật.", row: foundRow
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    Logger.log("[_handleUpdateData] LỖI: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false, error: err.message
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
