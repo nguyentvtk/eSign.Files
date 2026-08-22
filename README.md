@@ -30,7 +30,9 @@ npm install
 cp .env.example .env  # Cấu hình env
 npm start
 # Truy cập http://localhost:3000
-# Admin mặc định: admin@esign.local / admin123
+# Lần chạy đầu, hệ thống tạo tài khoản admin@esign.local và IN MẬT KHẨU
+# NGẪU NHIÊN RA TERMINAL đúng một lần — hãy lưu lại và đổi ngay sau khi đăng nhập.
+# Muốn tự đặt: khai SEED_ADMIN_PASSWORD trong .env trước khi chạy lần đầu.
 ```
 
 ## Deploy Vercel
