@@ -5,7 +5,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const { getDb, close } = require('./db/database');
-const { hashPassword } = require('./utils/crypto');
+const { hashPassword, randomToken } = require('./utils/crypto');
 
 const app = express();
 
@@ -113,18 +113,44 @@ app.use((err, req, res, _next) => {
 });
 
 
-function seedAdmin() {
+// Tạo tài khoản admin đầu tiên khi CSDL còn trống.
+//
+// KHÔNG bao giờ dùng mật khẩu cố định ở đây: repo này công khai, nên
+// bất kỳ giá trị nào nằm trong mã cũng đồng nghĩa với việc ai đọc repo
+// cũng đăng nhập được vào mọi bản triển khai.
+//
+// Mật khẩu lấy từ SEED_ADMIN_PASSWORD. Không đặt biến đó thì sinh ngẫu
+// nhiên và in ra log đúng một lần, để bản cài mới vẫn dùng được ngay mà
+// không cần một mật khẩu ai cũng biết.
+async function seedAdmin() {
   const db = getDb();
   const exists = db.prepare("SELECT id FROM users WHERE email = 'admin@esign.local'").get();
-  if (!exists) {
-    db.prepare(
-      "INSERT INTO users (ma_nv, ho_ten, email, phan_quyen, password_hash) VALUES ('ADMIN001', 'Quản trị viên', 'admin@esign.local', 'Admin', '$2b$04$H48PbHXQ6fGf3d1k/GFJlOspm2q/A8wl89.EkWRIeMGSjwSMOed6G')"
-    ).run();
-    console.log('[Seed] Tài khoản admin mặc định: admin@esign.local / admin123');
+  if (exists) return;
+
+  const fromEnv = process.env.SEED_ADMIN_PASSWORD;
+  const password = fromEnv || randomToken(9);   // 18 ký tự hex
+
+  db.prepare(
+    `INSERT INTO users (ma_nv, ho_ten, email, phan_quyen, password_hash)
+     VALUES ('ADMIN001', 'Quản trị viên', 'admin@esign.local', 'Admin', ?)`
+  ).run(await hashPassword(password));
+
+  if (fromEnv) {
+    console.log('[Seed] Đã tạo admin@esign.local với mật khẩu từ SEED_ADMIN_PASSWORD.');
+  } else {
+    console.log('');
+    console.log('  ┌────────────────────────────────────────────────────────────┐');
+    console.log('  │ ĐÃ TẠO TÀI KHOẢN QUẢN TRỊ ĐẦU TIÊN                         │');
+    console.log('  │ Mật khẩu dưới đây CHỈ HIỆN MỘT LẦN — hãy lưu lại ngay.     │');
+    console.log('  └────────────────────────────────────────────────────────────┘');
+    console.log(`     Tài khoản : admin@esign.local`);
+    console.log(`     Mật khẩu  : ${password}`);
+    console.log('     Đổi mật khẩu ngay sau khi đăng nhập lần đầu.');
+    console.log('');
   }
 }
 
-try { seedAdmin(); } catch (e) { console.error('[Seed]', e.message); }
+seedAdmin().catch(e => console.error('[Seed]', e.message));
 
 // Trên Vercel (serverless), không gọi listen — export app.
 if (!process.env.VERCEL) {
