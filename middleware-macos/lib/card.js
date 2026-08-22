@@ -14,16 +14,50 @@
 ═══════════════════════════════════════════════════════════ */
 'use strict';
 
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const PIPE = path.join(__dirname, '..', 'native', 'pcsc-pipe');
+const PIPE_SRC = PIPE + '.c';
 
 const AID = 'E828BD080FD25047656E65726963';
 const EF_ODF = 0x5031;
 const EF_PRKDF = 0x7002;
 const EF_CDF = 0x7005;
 const EF_AODF = 0x7001;
+
+/**
+ * Biên dịch cầu nối PC/SC nếu chưa có hoặc nếu mã nguồn mới hơn.
+ *
+ * Nhị phân này không được commit (xem .gitignore) vì nó phụ thuộc kiến
+ * trúc máy. Nếu để người dùng tự chạy `cc` thì bản clone mới sẽ chết
+ * giữa chừng với lỗi ENOENT khó hiểu — mà lại chết SAU khi họ đã đăng
+ * nhập và chọn xong tài liệu. Dựng sẵn ở đây rẻ hơn nhiều.
+ *
+ * Không truyền -arch: để trình biên dịch chọn kiến trúc của máy, nhờ
+ * vậy chạy được trên cả Apple Silicon lẫn Intel.
+ */
+function ensureHelperBuilt() {
+  try {
+    const bin = fs.statSync(PIPE);
+    const src = fs.statSync(PIPE_SRC);
+    if (bin.mtimeMs >= src.mtimeMs) return;
+  } catch {
+    // chưa có nhị phân — biên dịch bên dưới
+  }
+
+  try {
+    execFileSync('cc', ['-O2', '-framework', 'PCSC', '-o', PIPE, PIPE_SRC], { stdio: 'pipe' });
+  } catch (e) {
+    const detail = (e.stderr && e.stderr.toString().trim()) || e.message;
+    throw new Error(
+      'Không biên dịch được cầu nối PC/SC (native/pcsc-pipe).\n' +
+      'Cần Xcode Command Line Tools — chạy: xcode-select --install\n' +
+      'Chi tiết: ' + detail
+    );
+  }
+}
 
 /*
  * Tham số MSE cho lệnh ký.
@@ -60,6 +94,8 @@ class CardSession {
    * SCardConnect trượt dù thẻ vẫn cắm bình thường.
    */
   async open(attempts = 5, delayMs = 400) {
+    ensureHelperBuilt();
+
     let lastErr;
     for (let i = 0; i < attempts; i++) {
       try {
