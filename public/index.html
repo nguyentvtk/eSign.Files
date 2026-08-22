@@ -230,6 +230,31 @@
                     <select class="nd-input" id="nd-phase" disabled><option value="">— Hãy chọn dự án trước —</option></select>
                   </div>
                   <div class="col-md-6">
+                    <label class="nd-label">Thủ tục</label>
+                    <input type="text" class="nd-input" id="nd-thu-tuc" list="dl-thu-tuc"
+                           placeholder="VD: Lập báo cáo KTKT, Thẩm định, Phê duyệt dự toán…" autocomplete="off">
+                    <datalist id="dl-thu-tuc">
+                      <option>Lập báo cáo KTKT</option>
+                      <option>Lập dự án đầu tư</option>
+                      <option>Thẩm định</option>
+                      <option>Phê duyệt chủ trương đầu tư</option>
+                      <option>Phê duyệt dự án</option>
+                      <option>Phê duyệt thiết kế - dự toán</option>
+                      <option>Phê duyệt kế hoạch lựa chọn nhà thầu</option>
+                      <option>Lựa chọn nhà thầu</option>
+                      <option>Ký kết hợp đồng</option>
+                      <option>Tạm ứng - thanh toán</option>
+                      <option>Quản lý chất lượng thi công</option>
+                      <option>Nghiệm thu giai đoạn</option>
+                      <option>Nghiệm thu hoàn thành</option>
+                      <option>Bàn giao đưa vào sử dụng</option>
+                      <option>Quyết toán</option>
+                    </datalist>
+                    <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px">
+                      Dùng để nhóm hồ sơ khi kết xuất danh mục. Gõ tự do hoặc chọn gợi ý.
+                    </div>
+                  </div>
+                  <div class="col-md-6">
                     <label class="nd-label">Loại văn bản <span class="req">*</span></label>
                     <select class="nd-input" id="nd-loai-vb">
                       <option value="">— Chọn loại —</option>
@@ -410,6 +435,50 @@
     </div>
 
     <!-- Project Modal -->
+
+    <!-- Kết xuất hồ sơ dự án (chỉ Admin) -->
+    <div class="modal fade" id="exportModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-archive"></i> Kết xuất hồ sơ dự án</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="exp-info" class="mb-3"></div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="data-card h-100" style="padding:18px">
+              <div style="font-weight:600;margin-bottom:6px"><i class="bi bi-file-earmark-spreadsheet text-success"></i> Bảng danh mục (Excel)</div>
+              <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">
+                Danh sách toàn bộ hồ sơ trình ký, nhóm theo <strong>Giai đoạn → Thủ tục</strong>, kèm số văn bản, người ký, ngày ký và trạng thái.
+              </div>
+              <button class="btn-primary-custom w-100" id="exp-btn-xlsx"><i class="bi bi-download"></i> Tải file Excel</button>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="data-card h-100" style="padding:18px">
+              <div style="font-weight:600;margin-bottom:6px"><i class="bi bi-file-zip text-primary"></i> Toàn bộ tệp tin (ZIP)</div>
+              <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">
+                Tải mọi tệp của dự án — bản gốc, bản đã ký và tệp đính kèm — sắp theo cây thư mục Giai đoạn / Thủ tục để lưu trữ.
+              </div>
+              <button class="btn-primary-custom w-100" id="exp-btn-zip"><i class="bi bi-download"></i> Tải tất cả tệp</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="exp-progress" style="display:none;margin-top:18px">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px">
+            <span id="exp-progress-label">Đang chuẩn bị…</span>
+            <span id="exp-progress-count" style="color:var(--text-muted)"></span>
+          </div>
+          <div style="height:8px;background:#EAECF0;border-radius:99px;overflow:hidden">
+            <div id="exp-progress-bar" style="height:100%;width:0;background:var(--brand-primary);transition:width .2s"></div>
+          </div>
+          <div id="exp-progress-note" style="font-size:11.5px;color:var(--text-muted);margin-top:8px"></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button></div>
+    </div></div></div>
     <div class="modal fade" id="projectModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
       <div class="modal-header"><h5 class="modal-title" id="projectModalTitle">Thêm dự án</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
@@ -821,6 +890,7 @@
 <script src="/js/vendor/vgcaplugin.js"></script>
 <script src="/js/usb-token.js"></script>
 <script src="/js/sign-workflow.js"></script>
-<script src="/js/app.js"></script>
+<script src="/js/zip-writer.js"></script>
+  <script src="/js/app.js"></script>
 </body>
 </html>

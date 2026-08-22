@@ -301,6 +301,8 @@
       if (!approver) { Toast.warning('Vui lòng chọn người duyệt.'); btn.classList.remove('loading'); btn.disabled=false; return; }
       formData.append('project_id', pid);
       if (phid) formData.append('phase_id', phid);
+      const thuTuc = $('#nd-thu-tuc')?.value?.trim();
+      if (thuTuc) formData.append('thu_tuc', thuTuc);
       formData.append('loai_van_ban', loaiVB);
       formData.append('so_van_ban', soVB);
       formData.append('so_van_ban_mode', mode);
@@ -660,7 +662,7 @@
         <td style="white-space:nowrap">
           <button class="tbl-action" title="Sửa" onclick="App.editProject(${p.id})"><i class="bi bi-pencil"></i></button>
           <button class="tbl-action" title="Xem danh mục" onclick="App.viewProjectDocs(${p.id})"><i class="bi bi-list-ul"></i></button>
-          <button class="tbl-action" title="Xuất HS" onclick="App.exportProject(${p.id})"><i class="bi bi-download"></i></button>
+          ${_laAdmin() ? `<button class="tbl-action" title="Kết xuất hồ sơ" onclick="App.exportProject(${p.id})"><i class="bi bi-archive"></i></button>` : ''}
           <button class="tbl-action" title="Xoá" onclick="App.deleteProject(${p.id},'${esc(p.ma_du_an)}')"><i class="bi bi-trash"></i></button>
         </td>
       </tr>`).join('');
@@ -848,19 +850,144 @@
     }, 200);
   };
 
-  App.exportProject = (id) => {
-    const token = localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
-    fetch(`/api/projects/${id}/export`, { headers: { 'Authorization': 'Bearer ' + token } })
-      .then(r => r.blob())
-      .then(b => {
-        const url = URL.createObjectURL(b);
-        const a = document.createElement('a');
-        a.href = url; a.download = `DanhMucHS_${id}_${new Date().toISOString().slice(0,10)}.csv`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-        Toast.success('Đã tải xuống danh mục HS quyết toán.');
-      });
+  /* ═══ KẾT XUẤT HỒ SƠ DỰ ÁN (chỉ Admin) ═══════════════════
+     Bảng Excel do máy chủ sinh. Gói ZIP thì trình duyệt tự tải
+     từng tệp rồi đóng gói: hàm serverless bị cắt ở 30 giây, không
+     đủ cho dự án nhiều tệp, còn ở đây muốn bao lâu cũng được và
+     người dùng nhìn thấy tiến độ.
+  ════════════════════════════════════════════════════════════ */
+
+  function _laAdmin() {
+    return (API.getUser()?.phan_quyen) === 'Admin';
+  }
+
+  function _token() {
+    return localStorage.getItem('esign_token') || sessionStorage.getItem('esign_token');
+  }
+
+  function _taiBlob(blob, tenTep) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = tenTep;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function _dungLuong(byte) {
+    if (!byte) return '0 B';
+    const dv = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.min(Math.floor(Math.log(byte) / Math.log(1024)), dv.length - 1);
+    return (byte / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + dv[i];
+  }
+
+  let _expDuAn = null;
+
+  App.exportProject = async (id) => {
+    if (!_laAdmin()) { Toast.error('Chỉ Admin mới kết xuất được hồ sơ dự án.'); return; }
+
+    $('#exp-progress').style.display = 'none';
+    $('#exp-info').innerHTML = '<div class="text-muted">Đang đọc danh mục…</div>';
+    new bootstrap.Modal($('#exportModal')).show();
+
+    const r = await _fetchAuth(`/api/projects/${id}/files`);
+    if (!r.success) {
+      $('#exp-info').innerHTML = `<div class="alert alert-danger mb-0">${esc(r.error || 'Không đọc được danh mục.')}</div>`;
+      return;
+    }
+
+    _expDuAn = r.data;
+    const d = r.data;
+    $('#exp-info').innerHTML = `
+      <div style="font-weight:600;font-size:15px">${esc(d.project.ten_du_an)}</div>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px">
+        Mã dự án <strong>${esc(d.project.ma_du_an)}</strong> • Trạng thái ${esc(d.project.trang_thai)}
+        • <strong>${d.soTep}</strong> tệp • ${_dungLuong(d.tongDungLuong)}
+      </div>`;
   };
+
+  $('#exp-btn-xlsx')?.addEventListener('click', async () => {
+    if (!_expDuAn) return;
+    const btn = $('#exp-btn-xlsx');
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/projects/${_expDuAn.project.id}/export.xlsx`,
+        { headers: { Authorization: 'Bearer ' + _token() } });
+      if (!res.ok) throw new Error('Máy chủ trả HTTP ' + res.status);
+      _taiBlob(await res.blob(),
+        `DanhMucHoSo_${_expDuAn.project.ma_du_an}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      Toast.success('Đã tải bảng danh mục.');
+    } catch (e) {
+      Toast.error('Không tải được file Excel: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('#exp-btn-zip')?.addEventListener('click', async () => {
+    if (!_expDuAn) return;
+    const { files, project } = _expDuAn;
+    if (!files.length) { Toast.warning('Dự án chưa có tệp nào để tải.'); return; }
+
+    const btn = $('#exp-btn-zip');
+    btn.disabled = true;
+    $('#exp-progress').style.display = 'block';
+    $('#exp-progress-note').textContent = 'Đừng đóng cửa sổ này cho tới khi tải xong.';
+
+    const datTienDo = (i, nhan) => {
+      $('#exp-progress-bar').style.width = Math.round((i / files.length) * 100) + '%';
+      $('#exp-progress-count').textContent = `${i}/${files.length}`;
+      $('#exp-progress-label').textContent = nhan;
+    };
+
+    const muc = [];
+    const loi = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      datTienDo(i, `Đang tải: ${f.path.split('/').pop()}`);
+      try {
+        // Tệp trên Dropbox phải đi qua proxy của máy chủ vì Dropbox
+        // không cho tải chéo miền.
+        const url = /^https?:\/\//.test(f.url)
+          ? `/api/documents/proxy?url=${encodeURIComponent(f.url)}`
+          : f.url;
+        const res = await fetch(url, { headers: { Authorization: 'Bearer ' + _token() } });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        muc.push({ path: f.path, data: new Uint8Array(await res.arrayBuffer()) });
+      } catch (e) {
+        loi.push(`${f.path} — ${e.message}`);
+      }
+    }
+
+    datTienDo(files.length, 'Đang đóng gói…');
+
+    try {
+      // Ghi lại những tệp hỏng ngay trong gói, để người lưu trữ biết
+      // thiếu gì thay vì phát hiện muộn.
+      if (loi.length) {
+        muc.push({
+          path: '_TEP_KHONG_TAI_DUOC.txt',
+          data: new TextEncoder().encode(
+            `Có ${loi.length}/${files.length} tệp không tải được:\n\n` + loi.join('\n')),
+        });
+      }
+
+      const zip = window.ZipWriter.taoZip(muc);
+      _taiBlob(zip, `HoSo_${project.ma_du_an}_${new Date().toISOString().slice(0, 10)}.zip`);
+
+      $('#exp-progress-label').textContent = 'Hoàn tất';
+      $('#exp-progress-note').textContent =
+        `Đã đóng gói ${muc.length - (loi.length ? 1 : 0)}/${files.length} tệp • ${_dungLuong(zip.size)}`;
+
+      if (loi.length) Toast.warning(`Xong, nhưng ${loi.length} tệp không tải được — xem file ghi chú trong gói.`);
+      else Toast.success('Đã tải toàn bộ tệp của dự án.');
+    } catch (e) {
+      Toast.error('Không đóng gói được: ' + e.message);
+      $('#exp-progress-label').textContent = 'Thất bại';
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ── Register (Sổ công văn đi) ──
   async function initRegister() {

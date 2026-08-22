@@ -69,6 +69,7 @@ function getDb() {
       }
       _migrate(_db);
       _migrateUsers(_db);
+      _migrateDocuments(_db);
     }
 
     return _db;
@@ -106,6 +107,25 @@ function _migrate(db) {
     add('sheet_source', 'TEXT');          // JSON config nguồn sheet (để re-sync)
   } catch (e) {
     console.error('[migrate] failed:', e.message);
+  }
+}
+
+/**
+ * Migration cho bảng documents — "Thủ tục" trong sổ công văn.
+ *
+ * Giai đoạn (project_phases) là cấp trên, thủ tục là cấp dưới: mỗi giai
+ * đoạn gồm nhiều thủ tục (lập BCKTKT, thẩm định, phê duyệt dự toán…).
+ * Báo cáo kết xuất hồ sơ dự án nhóm theo đúng hai cấp này.
+ */
+function _migrateDocuments(db) {
+  try {
+    const cols = db.prepare('PRAGMA table_info(documents)').all().map(c => c.name);
+    if (!cols.includes('thu_tuc')) {
+      try { db.exec("ALTER TABLE documents ADD COLUMN thu_tuc TEXT DEFAULT ''"); }
+      catch (e) { console.error('[migrate documents] thu_tuc', e.message); }
+    }
+  } catch (e) {
+    console.error('[migrate documents] failed:', e.message);
   }
 }
 

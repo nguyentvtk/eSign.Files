@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS documents (
   -- Sổ công văn đi
   project_id      INTEGER REFERENCES projects(id),
   phase_id        INTEGER REFERENCES project_phases(id),
+  thu_tuc         TEXT    DEFAULT '',
   loai_van_ban    TEXT    DEFAULT '',
   so_van_ban      TEXT    DEFAULT '',
   so_van_ban_mode TEXT    DEFAULT 'auto' CHECK(so_van_ban_mode IN ('auto','manual')),
