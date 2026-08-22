@@ -47,6 +47,10 @@ chữ ký thu được với public key trong chứng thư.
 node sign-cli.js
 ```
 
+Lần chạy đầu, cầu nối PC/SC (`native/pcsc-pipe`) được biên dịch tự động từ
+`native/pcsc-pipe.c` — không cần bước thủ công nào. Máy chỉ cần sẵn Xcode
+Command Line Tools (`xcode-select --install`).
+
 Công cụ sẽ: đăng nhập → liệt kê tài liệu đang *Chờ ký* → cho bạn chọn → tải PDF
 gốc → hỏi PIN → ký bằng token → nộp lại qua `/api/signing/upload-signed`.
 Server tự xác minh chữ ký và chuỗi tin cậy rồi lưu file **nguyên trạng**.
