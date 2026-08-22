@@ -428,8 +428,21 @@
       </div>
       <div class="data-card">
         <div style="overflow-x:auto">
-          <table class="doc-table"><thead><tr><th>STT</th><th>Giai đoạn</th><th>Loại VB</th><th>Số VB</th><th>Tên tài liệu</th><th>Người duyệt</th><th>Ngày ký</th><th>Trạng thái</th></tr></thead>
-          <tbody id="register-body"><tr><td colspan="8" class="text-center text-muted py-4">Chọn dự án để xem danh mục</td></tr></tbody></table>
+          <table class="doc-table"><thead><tr><th>STT</th><th>Giai đoạn</th><th style="min-width:200px">Thủ tục</th><th>Loại VB</th><th>Số VB</th><th>Tên tài liệu</th><th>Người duyệt</th><th>Ngày ký</th><th>Trạng thái</th></tr></thead>
+          <tbody id="register-body"><tr><td colspan="9" class="text-center text-muted py-4">Chọn dự án để xem danh mục</td></tr></tbody></table>
+        </div>
+        <div id="reg-save-bar" style="display:none;border-top:1px solid var(--card-border);padding:12px 16px;
+             align-items:center;justify-content:space-between;gap:12px;background:#FFFBEB">
+          <div style="font-size:13px">
+            <i class="bi bi-pencil-square" style="color:#B54708"></i>
+            Đang sửa <strong id="reg-dirty-count">0</strong> thủ tục — chưa lưu.
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-secondary" id="btn-reg-cancel">Hoàn tác</button>
+            <button class="btn-primary-custom" id="btn-reg-save" style="padding:6px 16px;font-size:13px">
+              <i class="bi bi-check-lg"></i> Lưu thủ tục
+            </button>
+          </div>
         </div>
       </div>
     </div>
