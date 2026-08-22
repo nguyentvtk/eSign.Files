@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
+const auditLog = require('../services/audit-log');
 const projectExport = require('../services/project-export');
 const projectXlsx = require('../services/project-xlsx');
 const sheets = require('../services/google-sheets');
@@ -407,6 +408,62 @@ router.get('/:id/files', authenticate, requireRole('Admin'), (req, res) => {
     console.error('[project files]', e);
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+// PATCH /projects/:id/documents/thu-tuc — điền/sửa Thủ tục cho tài liệu đã tạo.
+//
+// Nhận cả loạt trong một lần gọi vì việc chính là điền bù cho tài liệu tạo
+// từ trước khi có trường này — sửa từng cái một sẽ rất mệt.
+//
+// Chỉ nhận tài liệu THUỘC ĐÚNG dự án trên URL: nếu không kiểm, người có
+// quyền ở một dự án sẽ sửa được tài liệu của dự án khác.
+router.patch('/:id/documents/thu-tuc', authenticate, requirePermission('Quản lý dự án'), (req, res) => {
+  const db = getDb();
+  const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ success: false, error: 'Không tìm thấy dự án.' });
+
+  const updates = Array.isArray(req.body?.updates) ? req.body.updates : null;
+  if (!updates || !updates.length) {
+    return res.status(400).json({ success: false, error: 'Không có dữ liệu cần cập nhật.' });
+  }
+  if (updates.length > 500) {
+    return res.status(400).json({ success: false, error: 'Mỗi lần chỉ cập nhật tối đa 500 tài liệu.' });
+  }
+
+  const thuocDuAn = new Set(
+    db.prepare('SELECT id FROM documents WHERE project_id = ?').all(proj.id).map(r => r.id)
+  );
+
+  const hopLe = [];
+  const boQua = [];
+  for (const u of updates) {
+    const id = parseInt(u?.id);
+    if (!id || !thuocDuAn.has(id)) { boQua.push(u?.id); continue; }
+    hopLe.push({ id, thu_tuc: String(u.thu_tuc ?? '').trim().slice(0, 200) });
+  }
+
+  if (!hopLe.length) {
+    return res.status(400).json({ success: false, error: 'Không tài liệu nào thuộc dự án này.' });
+  }
+
+  const stmt = db.prepare("UPDATE documents SET thu_tuc = ?, updated_at = datetime('now') WHERE id = ? AND project_id = ?");
+  const tx = db.transaction(() => {
+    for (const u of hopLe) stmt.run(u.thu_tuc, u.id, proj.id);
+  });
+  tx();
+
+  auditLog.log({
+    userId: req.user.id, userEmail: req.user.email,
+    action: 'DOCUMENT_THU_TUC_UPDATE', targetType: 'project', targetId: proj.ma_du_an,
+    detail: { soTaiLieu: hopLe.length, boQua: boQua.length },
+    ip: req.ip, userAgent: req.get('user-agent'),
+  });
+
+  res.json({
+    success: true,
+    message: `Đã cập nhật thủ tục cho ${hopLe.length} tài liệu.`,
+    data: { daCapNhat: hopLe.length, boQua: boQua.length },
+  });
 });
 
 module.exports = router;

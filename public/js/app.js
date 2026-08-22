@@ -990,6 +990,80 @@
   });
 
   // ── Register (Sổ công văn đi) ──
+  /* ═══ SỔ CÔNG VĂN ĐI ═════════════════════════════════════
+     Cột "Thủ tục" sửa được ngay tại bảng. Tài liệu tạo trước khi
+     có trường này đều trống, nên gõ từng cái rồi bấm lưu một lần
+     sẽ nhanh hơn nhiều so với mở từng tài liệu ra sửa.
+  ════════════════════════════════════════════════════════════ */
+
+  let _regDuAn = null;
+  let _regGoc = new Map();     // id → thủ tục lúc tải về
+  let _regSua = new Map();     // id → thủ tục đang sửa (chỉ mục đã đổi)
+
+  function _regCoQuyenSua() {
+    return ['Admin', 'Quản lý'].includes(API.getUser()?.phan_quyen);
+  }
+
+  function _regCapNhatThanhLuu() {
+    const bar = $('#reg-save-bar');
+    if (!bar) return;
+    bar.style.display = _regSua.size ? 'flex' : 'none';
+    $('#reg-dirty-count').textContent = _regSua.size;
+  }
+
+  // Gọi từ ô nhập trong bảng
+  App.regSuaThuTuc = (id, giaTri) => {
+    const moi = String(giaTri || '').trim();
+    if (moi === (_regGoc.get(id) || '')) _regSua.delete(id);
+    else _regSua.set(id, moi);
+    _regCapNhatThanhLuu();
+  };
+
+  async function _regTaiDanhMuc(pid) {
+    const body = $('#register-body');
+    _regSua.clear(); _regGoc.clear(); _regCapNhatThanhLuu();
+
+    if (!pid) {
+      body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Chọn dự án để xem danh mục</td></tr>';
+      return;
+    }
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Đang tải…</td></tr>';
+
+    const r = await _fetchAuth(`/api/projects/${pid}/documents`);
+    if (!r.success) { Toast.error(r.error); return; }
+
+    _regDuAn = pid;
+    const docs = r.data.documents || [];
+    if (!docs.length) {
+      body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Chưa có văn bản</td></tr>';
+      return;
+    }
+
+    const suaDuoc = _regCoQuyenSua();
+    docs.forEach(d => _regGoc.set(d.id, d.thu_tuc || ''));
+
+    body.innerHTML = docs.map((d, i) => {
+      const tt = d.thu_tuc || '';
+      const oThuTuc = suaDuoc
+        ? `<input type="text" class="nd-input" list="dl-thu-tuc" value="${esc(tt)}"
+                  placeholder="— chưa phân —" style="padding:5px 8px;font-size:12.5px;width:100%"
+                  oninput="App.regSuaThuTuc(${d.id}, this.value)">`
+        : (tt ? esc(tt) : '<span class="text-muted">— chưa phân —</span>');
+
+      return `<tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td>${esc(d.ten_giai_doan || '—')}</td>
+        <td>${oThuTuc}</td>
+        <td><span class="role-badge user">${esc(d.loai_van_ban || d.loai_tai_lieu)}</span></td>
+        <td><strong>${esc(d.so_van_ban || '—')}</strong></td>
+        <td><div style="font-weight:500">${esc(d.ten_tai_lieu)}</div><div style="font-size:11px;color:var(--text-muted)">${esc(d.ma_doc)}</div></td>
+        <td>${esc(d.nguoi_duyet_name || '—')}</td>
+        <td style="font-size:12.5px">${d.ngay_ky ? fmtDate(d.ngay_ky) : '—'}</td>
+        <td>${statusBadge(d.trang_thai)}</td>
+      </tr>`;
+    }).join('');
+  }
+
   async function initRegister() {
     const sel = $('#reg-project-filter');
     if (!sel) return;
@@ -998,26 +1072,46 @@
       if (r.success) sel.innerHTML = '<option value="">— Chọn dự án —</option>' +
         r.data.map(p => `<option value="${p.id}">${esc(p.ma_du_an)} — ${esc(p.ten_du_an)}</option>`).join('');
     }
-    sel.onchange = async () => {
-      const pid = sel.value;
-      if (!pid) { $('#register-body').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Chọn dự án để xem danh mục</td></tr>'; return; }
-      $('#register-body').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Đang tải…</td></tr>';
-      const r = await _fetchAuth(`/api/projects/${pid}/documents`);
-      if (!r.success) { Toast.error(r.error); return; }
-      const docs = r.data.documents || [];
-      if (!docs.length) { $('#register-body').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Chưa có văn bản</td></tr>'; return; }
-      $('#register-body').innerHTML = docs.map((d, i) => `<tr>
-        <td style="text-align:center">${i+1}</td>
-        <td>${esc(d.ten_giai_doan||'—')}</td>
-        <td><span class="role-badge user">${esc(d.loai_van_ban||d.loai_tai_lieu)}</span></td>
-        <td><strong>${esc(d.so_van_ban||'—')}</strong></td>
-        <td><div style="font-weight:500">${esc(d.ten_tai_lieu)}</div><div style="font-size:11px;color:var(--text-muted)">${esc(d.ma_doc)}</div></td>
-        <td>${esc(d.nguoi_duyet_name||'—')}</td>
-        <td style="font-size:12.5px">${d.ngay_ky?fmtDate(d.ngay_ky):'—'}</td>
-        <td>${statusBadge(d.trang_thai)}</td>
-      </tr>`).join('');
+    sel.onchange = () => {
+      if (_regSua.size && !confirm(`Còn ${_regSua.size} thủ tục chưa lưu. Chuyển dự án sẽ mất thay đổi. Tiếp tục?`)) {
+        sel.value = _regDuAn || '';
+        return;
+      }
+      _regTaiDanhMuc(sel.value);
     };
   }
+
+  $('#btn-reg-cancel')?.addEventListener('click', () => {
+    if (_regDuAn) _regTaiDanhMuc(_regDuAn);
+  });
+
+  $('#btn-reg-save')?.addEventListener('click', async () => {
+    if (!_regDuAn || !_regSua.size) return;
+    const btn = $('#btn-reg-save');
+    btn.disabled = true;
+    try {
+      const updates = [..._regSua].map(([id, thu_tuc]) => ({ id, thu_tuc }));
+      // _fetchAuth không tự đặt Content-Type, thiếu nó thì express.json()
+      // bỏ qua body và máy chủ tưởng không có dữ liệu.
+      const r = await _fetchAuth(`/api/projects/${_regDuAn}/documents/thu-tuc`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      });
+      if (!r.success) { Toast.error(r.error); return; }
+      Toast.success(r.message || 'Đã lưu thủ tục.');
+      await _regTaiDanhMuc(_regDuAn);
+    } catch (e) {
+      Toast.error('Không lưu được: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Nhắc trước khi rời trang nếu còn sửa dở
+  window.addEventListener('beforeunload', (e) => {
+    if (_regSua.size) { e.preventDefault(); e.returnValue = ''; }
+  });
 
   $('#btn-export-register')?.addEventListener('click', () => {
     const pid = $('#reg-project-filter')?.value;
