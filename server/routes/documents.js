@@ -188,7 +188,7 @@ router.post('/', authenticate, requirePermission('Khởi tạo tài liệu'), (r
     }
 
     const { ten_tai_lieu, loai_tai_lieu, trich_yeu, ghi_chu,
-            project_id, phase_id, loai_van_ban, so_van_ban, so_van_ban_mode, nguoi_duyet_id,
+            project_id, phase_id, thu_tuc, loai_van_ban, so_van_ban, so_van_ban_mode, nguoi_duyet_id,
             ngay_phat_hanh } = req.body;
     if (!ten_tai_lieu) return res.status(400).json({ success: false, error: 'Tên tài liệu không được để trống.' });
 
@@ -210,14 +210,15 @@ router.post('/', authenticate, requirePermission('Khởi tạo tài liệu'), (r
 
       const result = db.prepare(`INSERT INTO documents
         (ma_doc, ten_tai_lieu, loai_tai_lieu, trich_yeu, nguoi_tao_id, file_name, file_size, file_hash_sha256, file_url, dropbox_path, ghi_chu,
-         project_id, phase_id, loai_van_ban, so_van_ban, so_van_ban_mode, nguoi_duyet_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         project_id, phase_id, thu_tuc, loai_van_ban, so_van_ban, so_van_ban_mode, nguoi_duyet_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         maDoc, ten_tai_lieu.trim(), loai_tai_lieu || 'van-ban-hc', trich_yeu || '',
         req.user.id, mainFile.originalname, mainFile.size, fileHash,
         mainUpload.url, mainUpload.dropboxPath, ghi_chu || '',
         project_id ? parseInt(project_id) : null,
         phase_id ? parseInt(phase_id) : null,
+        (thu_tuc || '').trim(),
         loai_van_ban || '',
         finalSoVanBan,
         so_van_ban_mode || 'auto',

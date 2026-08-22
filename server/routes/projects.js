@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
-const { authenticate, requirePermission } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
+const projectExport = require('../services/project-export');
+const projectXlsx = require('../services/project-xlsx');
 const sheets = require('../services/google-sheets');
 const projectSync = require('../services/project-sync');
 
@@ -311,8 +313,9 @@ router.get('/:id/documents', authenticate, (req, res) => {
   res.json({ success: true, data: { project: proj, documents: docs } });
 });
 
-// GET /projects/:id/export?format=csv — Xuất danh mục HS quyết toán
-router.get('/:id/export', authenticate, (req, res) => {
+// GET /projects/:id/export — Xuất danh mục HS dạng CSV.
+// Chỉ Admin: bảng này lộ toàn bộ link tài liệu của dự án.
+router.get('/:id/export', authenticate, requireRole('Admin'), (req, res) => {
   const db = getDb();
   const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ success: false, error: 'Không tìm thấy.' });
@@ -352,6 +355,58 @@ router.get('/:id/export', authenticate, (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="DanhMucHS_${proj.ma_du_an}_${new Date().toISOString().slice(0,10)}.csv"`);
   res.send(csv);
+});
+
+/* ── Kết xuất hồ sơ dự án (chỉ Admin) ─────────────────────
+   Hai đầu ra dùng chung một cây dữ liệu nên thứ tự dòng trong
+   file Excel khớp với cây thư mục trong file ZIP.
+──────────────────────────────────────────────────────────── */
+
+// GET /projects/:id/export.xlsx — bảng danh mục theo Giai đoạn → Thủ tục
+router.get('/:id/export.xlsx', authenticate, requireRole('Admin'), async (req, res) => {
+  try {
+    const db = getDb();
+    const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+    if (!proj) return res.status(404).json({ success: false, error: 'Không tìm thấy dự án.' });
+
+    const cay = projectExport.dungCay(db, proj);
+    const buf = await projectXlsx.taoWorkbook(cay);
+
+    const ten = `DanhMucHoSo_${projectExport.lamSachTen(proj.ma_du_an)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(ten)}`);
+    res.send(buf);
+  } catch (e) {
+    console.error('[export.xlsx]', e);
+    res.status(500).json({ success: false, error: 'Không tạo được file Excel: ' + e.message });
+  }
+});
+
+// GET /projects/:id/files — danh mục tệp để trình duyệt tải rồi nén ZIP.
+// Nén phía trình duyệt vì hàm serverless bị cắt ở 30 giây, không đủ cho
+// dự án nhiều tệp.
+router.get('/:id/files', authenticate, requireRole('Admin'), (req, res) => {
+  try {
+    const db = getDb();
+    const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+    if (!proj) return res.status(404).json({ success: false, error: 'Không tìm thấy dự án.' });
+
+    const cay = projectExport.dungCay(db, proj);
+    const { tep, tongDungLuong } = projectExport.danhMucTep(cay);
+
+    res.json({
+      success: true,
+      data: {
+        project: { id: proj.id, ma_du_an: proj.ma_du_an, ten_du_an: proj.ten_du_an, trang_thai: proj.trang_thai },
+        files: tep,
+        soTep: tep.length,
+        tongDungLuong,
+      },
+    });
+  } catch (e) {
+    console.error('[project files]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 module.exports = router;
