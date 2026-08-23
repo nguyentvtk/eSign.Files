@@ -41,7 +41,50 @@ của Gemalto, còn thẻ này dùng AID 14 byte, nên `pkcs15-tool` báo *Unsup
 card*. Tham số `algRef` được tìm bằng cách quét (xem `sweep.js`) rồi đối chiếu
 chữ ký thu được với public key trong chứng thư.
 
-## Cách dùng — ký rời (khuyến nghị)
+## Cách dùng — bấm "Ký số" ngay trên web (giống Windows)
+
+```bash
+node vgca-service.js
+```
+
+Dịch vụ này nói **đúng giao thức của thư viện chính thức `vgcaplugin.js`** mà Ban
+Cơ yếu phát hành, nên trang web không phải sửa gì: bấm *Ký số* là hộp thoại PIN
+bật lên ngay, y như khi chạy VGCA Sign Service trên Windows.
+
+**Lần đầu chạy**, mở https://127.0.0.1:8987 rồi bấm *Nâng cao → Tiếp tục* để
+trình duyệt chấp nhận chứng chỉ cục bộ. Chỉ cần làm một lần cho mỗi hồ sơ Chrome.
+Không cần quyền quản trị, không đụng tới kho tin cậy của hệ thống.
+
+Chứng chỉ TLS tự sinh vào `certs/` ở lần chạy đầu (khoá riêng quyền `600`, đã
+nằm trong `.gitignore`), tự tạo lại khi còn dưới 30 ngày là hết hạn.
+
+### Vì sao phải chạy TLS
+
+`vgcaplugin.js` ép dùng `wss://`, mà không CA công cộng nào cấp chứng chỉ cho
+`127.0.0.1` — nên tự ký là cách duy nhất.
+
+### Endpoint đã cài đặt
+
+| Đường | Việc |
+|---|---|
+| `/GetVersion` | Trang web dò xem dịch vụ có đang chạy không |
+| `/GetCertInfo` | Trả thông tin chứng thư trên token |
+| `/SignApproved` | Tải PDF gốc → hỏi PIN → ký PAdES → nộp thẳng lên máy chủ |
+| `/Config` | Hiện cấu hình hiện tại |
+
+Các endpoint khác của VGCA (`SignFiles`, `SignHash`, `SignXML`…) chưa cài đặt —
+gọi vào sẽ trả lỗi nêu rõ tên endpoint còn thiếu.
+
+### An toàn
+
+Chỉ nhận yêu cầu từ origin trong danh sách cho phép, mặc định gồm
+`e-sign-files.vercel.app` và `vbdh.tayninh.gov.vn`. Đổi bằng biến `VGCA_ORIGINS`.
+Không có hàng rào này thì bất kỳ trang web nào bạn mở cũng bật được hộp thoại PIN.
+
+Hộp thoại PIN luôn nêu **trang web nào đang yêu cầu ký**, để bạn thấy rõ ai xin
+chữ ký của mình.
+
+## Cách dùng — ký rời (không cần trình duyệt)
 
 ```bash
 node sign-cli.js
@@ -122,7 +165,8 @@ Chrome cho phép trang HTTPS gọi vào `127.0.0.1` nhờ header
 | `test-pades.js` | Ký một PDF mẫu và xuất phần tử cho OpenSSL kiểm chứng |
 | `test-ws.js` | Client WebSocket thử toàn bộ giao thức |
 | `sweep.js` | Dò lại tham số ký nếu đổi sang token khác |
-| `sign-cli.js` | Công cụ ký rời — đường dùng chính |
+| `sign-cli.js` | Công cụ ký rời — chạy bằng dòng lệnh |
+| `vgca-service.js` | Dịch vụ ký cho trình duyệt, giao thức VGCA Sign Service |
 
 Kiểm chứng chữ ký bằng OpenSSL:
 
@@ -134,5 +178,6 @@ openssl cms -verify -inform DER -in chuky.der -content noidung.bin -binary -CAfi
 
 | Biến | Mặc định |
 |---|---|
-| `VGCA_PORT` | `9090` |
+| `VGCA_PORT` | `9090` (middleware giao thức chung) |
+| `VGCA_SERVICE_PORT` | `8987` (dịch vụ VGCA Sign Service) |
 | `VGCA_ORIGINS` | `https://e-sign-files.vercel.app,http://localhost:3000,http://127.0.0.1:3000` |
